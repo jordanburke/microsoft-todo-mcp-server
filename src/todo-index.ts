@@ -94,6 +94,12 @@ but API access is restricted for personal accounts.
       throw new Error(`HTTP error! status: ${response.status}, body: ${errorText}`)
     }
 
+    // Handle DELETE requests which may return empty responses
+    if (method === "DELETE") {
+      console.error(`DELETE request successful: ${response.status}`)
+      return {} as T // Return empty object for successful DELETE
+    }
+
     const data = await response.json()
     console.error(`Response received: ${JSON.stringify(data).substring(0, 200)}...`)
     return data as T
@@ -255,7 +261,15 @@ interface Task {
   title: string
   status: string
   importance: string
+  createdDateTime?: string
+  lastModifiedDateTime?: string
+  bodyLastModifiedDateTime?: string
+  hasAttachments?: boolean
   dueDateTime?: {
+    dateTime: string
+    timeZone: string
+  }
+  startDateTime?: {
     dateTime: string
     timeZone: string
   }
@@ -270,8 +284,98 @@ interface Task {
   body?: {
     content: string
     contentType: string
+    lastModifiedDateTime?: string
   }
   categories?: string[]
+  isReminderOn?: boolean
+  recurrence?: {
+    pattern: {
+      type: string
+      interval: number
+      month?: number
+      dayOfMonth?: number
+      daysOfWeek?: string[]
+      firstDayOfWeek?: string
+      index?: string
+    }
+    range: {
+      type: string
+      startDate: string
+      endDate?: string
+      recurrenceTimeZone?: string
+      numberOfOccurrences?: number
+    }
+  }
+  linkedResources?: {
+    webUrl?: string
+    applicationName?: string
+    displayName?: string
+    externalId?: string
+  }[]
+}
+
+interface TaskAttachment {
+  id: string
+  name: string
+  size?: number
+  contentType?: string
+  lastModifiedDateTime?: string
+  contentBytes?: string // Base64 encoded content
+}
+
+interface CreateTaskBody {
+  title: string
+  body?: {
+    content: string
+    contentType: string
+  }
+  dueDateTime?: {
+    dateTime: string
+    timeZone: string
+  }
+  startDateTime?: {
+    dateTime: string
+    timeZone: string
+  }
+  completedDateTime?: {
+    dateTime: string
+    timeZone: string
+  }
+  reminderDateTime?: {
+    dateTime: string
+    timeZone: string
+  }
+  importance?: string
+  isReminderOn?: boolean
+  status?: string
+  categories?: string[]
+  createdDateTime?: string
+  lastModifiedDateTime?: string
+  bodyLastModifiedDateTime?: string
+  recurrence?: {
+    pattern: {
+      type: string
+      interval: number
+      month?: number
+      dayOfMonth?: number
+      daysOfWeek?: string[]
+      firstDayOfWeek?: string
+      index?: string
+    }
+    range: {
+      type: string
+      startDate: string
+      endDate?: string
+      recurrenceTimeZone?: string
+      numberOfOccurrences?: number
+    }
+  }
+  linkedResources?: {
+    webUrl?: string
+    applicationName?: string
+    displayName?: string
+    externalId?: string
+  }[]
 }
 
 interface ChecklistItem {
@@ -1905,6 +2009,182 @@ server.tool(
           {
             type: "text",
             text: `Error during Graph API exploration: ${error}`,
+          },
+        ],
+      }
+    }
+  },
+)
+
+// Move task tool with full metadata and attachment preservation
+server.tool(
+  "move-task",
+  "Move a task from one list to another, preserving checklist items and most metadata. Tasks with attachments cannot be moved. Creation timestamps cannot be preserved due to API limitations.",
+  {
+    sourceListId: z.string().describe("ID of the source task list"),
+    sourceTaskId: z.string().describe("ID of the task to move"),
+    targetListId: z.string().describe("ID of the target task list"),
+  },
+  async ({ sourceListId, sourceTaskId, targetListId }) => {
+    try {
+      const token = await getAccessToken()
+      if (!token) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: "Failed to authenticate with Microsoft API",
+            },
+          ],
+        }
+      }
+
+      // Get the original task with all details
+      const originalTask = await makeGraphRequest<Task>(
+        `${MS_GRAPH_BASE}/me/todo/lists/${sourceListId}/tasks/${sourceTaskId}`,
+        token,
+      )
+
+      if (!originalTask) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Failed to retrieve task: ${sourceTaskId}`,
+            },
+          ],
+        }
+      }
+
+      // Check if task has attachments - reject if it does
+      if (originalTask.hasAttachments === true) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Cannot move task "${originalTask.title}" because it has attachments. Tasks with attachments cannot be moved between lists.`,
+            },
+          ],
+        }
+      }
+
+      // Get checklist items
+      const checklistResponse = await makeGraphRequest<{ value: ChecklistItem[] }>(
+        `${MS_GRAPH_BASE}/me/todo/lists/${sourceListId}/tasks/${sourceTaskId}/checklistItems`,
+        token,
+      )
+      const checklistItems = checklistResponse?.value || []
+
+      // Create the new task in the target list with all metadata
+      const newTaskBody: CreateTaskBody = {
+        title: originalTask.title,
+      }
+
+      // Copy all available properties, attempting to preserve timestamps
+      if (originalTask.body) {
+        newTaskBody.body = {
+          content: originalTask.body.content,
+          contentType: originalTask.body.contentType || "text",
+        }
+      }
+
+      if (originalTask.dueDateTime) newTaskBody.dueDateTime = originalTask.dueDateTime
+      if (originalTask.startDateTime) newTaskBody.startDateTime = originalTask.startDateTime
+      if (originalTask.importance) newTaskBody.importance = originalTask.importance
+      if (originalTask.isReminderOn !== undefined) newTaskBody.isReminderOn = originalTask.isReminderOn
+      if (originalTask.reminderDateTime) newTaskBody.reminderDateTime = originalTask.reminderDateTime
+      if (originalTask.status) newTaskBody.status = originalTask.status
+      if (originalTask.categories) newTaskBody.categories = originalTask.categories
+      if (originalTask.recurrence) newTaskBody.recurrence = originalTask.recurrence
+      if (originalTask.linkedResources) newTaskBody.linkedResources = originalTask.linkedResources
+
+      // Attempt to preserve creation date (may not work due to API limitations)
+      if (originalTask.createdDateTime) {
+        newTaskBody.createdDateTime = originalTask.createdDateTime
+      }
+
+      // Attempt to preserve modification dates
+      if (originalTask.lastModifiedDateTime) {
+        newTaskBody.lastModifiedDateTime = originalTask.lastModifiedDateTime
+      }
+
+      if (originalTask.bodyLastModifiedDateTime) {
+        newTaskBody.bodyLastModifiedDateTime = originalTask.bodyLastModifiedDateTime
+      }
+
+      // Handle completed date
+      if (originalTask.completedDateTime) {
+        newTaskBody.completedDateTime = originalTask.completedDateTime
+      }
+
+      const newTask = await makeGraphRequest<Task>(
+        `${MS_GRAPH_BASE}/me/todo/lists/${targetListId}/tasks`,
+        token,
+        "POST",
+        newTaskBody,
+      )
+
+      if (!newTask) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: "Failed to create task in target list",
+            },
+          ],
+        }
+      }
+
+      // Copy checklist items to the new task
+      for (const item of checklistItems) {
+        await makeGraphRequest(
+          `${MS_GRAPH_BASE}/me/todo/lists/${targetListId}/tasks/${newTask.id}/checklistItems`,
+          token,
+          "POST",
+          {
+            displayName: item.displayName,
+            isChecked: item.isChecked,
+          },
+        )
+      }
+
+      // Delete the original task
+      const deleteResult = await makeGraphRequest(
+        `${MS_GRAPH_BASE}/me/todo/lists/${sourceListId}/tasks/${sourceTaskId}`,
+        token,
+        "DELETE",
+      )
+
+      const checklistCount = checklistItems.length
+
+      // Check if timestamps were actually preserved
+      const timestampsPreserved =
+        newTask.createdDateTime === originalTask.createdDateTime &&
+        newTask.lastModifiedDateTime === originalTask.lastModifiedDateTime
+
+      return {
+        content: [
+          {
+            type: "text",
+            text:
+              `✅ Successfully moved task "${originalTask.title}"\n\n` +
+              `📋 Details:\n` +
+              `• Task ID: ${newTask.id}\n` +
+              `• Checklist items moved: ${checklistCount}\n` +
+              `• Original task deleted: ${deleteResult !== null ? "✅ Yes" : "❌ No"}\n` +
+              `• Timestamps preserved: ${timestampsPreserved ? "✅ Yes" : "❌ No"}\n\n` +
+              (timestampsPreserved
+                ? `✅ All metadata successfully preserved!`
+                : `⚠️ Note: Timestamps were not preserved. Original creation: ${originalTask.createdDateTime}, New creation: ${newTask.createdDateTime}.`),
+          },
+        ],
+      }
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Error moving task: ${error}`,
           },
         ],
       }

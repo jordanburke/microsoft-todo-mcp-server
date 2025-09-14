@@ -28,7 +28,7 @@ const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
 
 const app = express()
-const port = 3000
+const port = Number(process.env.PORT) || 3000
 const TOKEN_FILE_PATH = join(process.cwd(), "tokens.json")
 
 // Determine the tenant ID to use:
@@ -546,5 +546,5 @@ app.get("/callback", async (req: Request, res: Response) => {
 app.listen(port, () => {
   console.log(`Auth server running at http://localhost:${port}`)
   console.log("Open your browser and navigate to the URL above to authenticate.")
-  console.log("Or try http://localhost:3000/test to verify the server is running.")
+  console.log(`Or try http://localhost:${port}/test to verify the server is running.`)
 })
