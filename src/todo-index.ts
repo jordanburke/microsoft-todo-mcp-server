@@ -255,7 +255,14 @@ interface Task {
   title: string
   status: string
   importance: string
+  createdDateTime?: string
+  lastModifiedDateTime?: string
+  bodyLastModifiedDateTime?: string
   dueDateTime?: {
+    dateTime: string
+    timeZone: string
+  }
+  startDateTime?: {
     dateTime: string
     timeZone: string
   }
@@ -272,6 +279,19 @@ interface Task {
     contentType: string
   }
   categories?: string[]
+  hasAttachments?: boolean
+  recurrence?: {
+    pattern: {
+      type: string
+      interval: number
+      daysOfWeek?: string[]
+    }
+    range: {
+      type: string
+      startDate: string
+      endDate?: string
+    }
+  }
 }
 
 interface ChecklistItem {
@@ -892,14 +912,52 @@ server.tool(
           taskInfo += `\nDue: ${new Date(task.dueDateTime.dateTime).toLocaleDateString()}`
         }
 
+        // Add completed date if available
+        if (task.completedDateTime) {
+          taskInfo += `\nCompleted: ${new Date(task.completedDateTime.dateTime).toLocaleString()}`
+        }
+
         // Add importance if available
         if (task.importance) {
           taskInfo += `\nImportance: ${task.importance}`
         }
 
+        // Add start date if available
+        if (task.startDateTime) {
+          taskInfo += `\nStart: ${new Date(task.startDateTime.dateTime).toLocaleString()}`
+        }
+
+        // Add created date if available
+        if (task.createdDateTime) {
+          taskInfo += `\nCreated: ${new Date(task.createdDateTime).toLocaleString()}`
+        }
+
+        // Add last modified if available
+        if (task.lastModifiedDateTime) {
+          taskInfo += `\nModified: ${new Date(task.lastModifiedDateTime).toLocaleString()}`
+        }
+
         // Add categories if available
         if (task.categories && task.categories.length > 0) {
           taskInfo += `\nCategories: ${task.categories.join(", ")}`
+        }
+
+        // Add recurrence pattern if available
+        if (task.recurrence) {
+          const pattern = task.recurrence.pattern
+          let recurrenceStr = pattern.type
+          if (pattern.interval > 1) {
+            recurrenceStr += ` (every ${pattern.interval})`
+          }
+          if (pattern.daysOfWeek && pattern.daysOfWeek.length > 0) {
+            recurrenceStr += ` on ${pattern.daysOfWeek.join(", ")}`
+          }
+          taskInfo += `\nRecurrence: ${recurrenceStr}`
+        }
+
+        // Add attachments indicator if available
+        if (task.hasAttachments) {
+          taskInfo += `\nHas attachments: Yes`
         }
 
         // Add body content if available and not empty
