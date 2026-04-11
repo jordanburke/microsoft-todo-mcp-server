@@ -1,10 +1,14 @@
 #!/usr/bin/env node
 
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs"
-import { join } from "path"
+import { join, dirname } from "path"
 import { homedir } from "os"
 import { spawn } from "child_process"
 import readline from "readline"
+import { fileURLToPath } from "url"
+
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = dirname(__filename)
 
 const rl = readline.createInterface({
   input: process.stdin,
@@ -49,7 +53,15 @@ async function setup() {
     console.log("5. Create a client secret\n")
 
     const clientId = await question("Enter your CLIENT_ID: ")
+    if (!clientId.trim()) {
+      console.error("❌ CLIENT_ID is required. Please run setup again.")
+      process.exit(1)
+    }
     const clientSecret = await question("Enter your CLIENT_SECRET: ")
+    if (!clientSecret.trim()) {
+      console.error("❌ CLIENT_SECRET is required. Please run setup again.")
+      process.exit(1)
+    }
     const tenantId = (await question("Enter your TENANT_ID (press Enter for 'organizations'): ")) || "organizations"
 
     // Create .env file
@@ -65,10 +77,11 @@ REDIRECT_URI=http://localhost:3000/callback
   console.log("\n🔐 Starting authentication flow...")
   console.log("A browser window will open. Please sign in with your Microsoft account.\n")
 
-  // Start the auth server
-  const authProcess = spawn("node", ["dist/auth-server.js"], {
+  // Start the auth server using an absolute path so this works when installed globally
+  const authServerPath = join(__dirname, "auth-server.js")
+  const authProcess = spawn(process.execPath, [authServerPath], {
     stdio: "inherit",
-    shell: true,
+    shell: false,
   })
 
   authProcess.on("close", async (code) => {
