@@ -3,11 +3,14 @@
 [![CI](https://github.com/jordanburke/microsoft-todo-mcp-server/actions/workflows/ci.yml/badge.svg)](https://github.com/jordanburke/microsoft-todo-mcp-server/actions/workflows/ci.yml)
 [![npm version](https://badge.fury.io/js/microsoft-todo-mcp-server.svg)](https://www.npmjs.com/package/microsoft-todo-mcp-server)
 
-A Model Context Protocol (MCP) server that enables AI assistants like Claude and Cursor to interact with Microsoft To Do via the Microsoft Graph API. This service provides comprehensive task management capabilities through a secure OAuth 2.0 authentication flow.
+A Model Context Protocol (MCP) server that enables AI assistants like Claude and Cursor to interact
+with Microsoft To Do via the Microsoft Graph API. This service provides comprehensive task
+management capabilities through a secure OAuth 2.0 authentication flow.
 
 ## Features
 
-- **15 MCP Tools**: Complete task management functionality including lists, tasks, checklist items, and organization features
+- **15 MCP Tools**: Complete task management functionality including lists, tasks, checklist items,
+  and organization features
 - **Seamless Authentication**: Automatic token refresh with zero manual intervention
 - **OAuth 2.0 Authentication**: Secure authentication with automatic token refresh
 - **Microsoft Graph API Integration**: Direct integration with Microsoft's official API
@@ -58,9 +61,12 @@ pnpm run build
 2. Navigate to "App registrations" and create a new registration
 3. Name your application (e.g., "To Do MCP")
 4. For "Supported account types", select one of the following based on your needs:
-   - **Accounts in this organizational directory only (Single tenant)** - For use within a single organization
-   - **Accounts in any organizational directory (Any Azure AD directory - Multitenant)** - For use across multiple organizations
-   - **Accounts in any organizational directory and personal Microsoft accounts** - For both work accounts and personal accounts
+   - **Accounts in this organizational directory only (Single tenant)** - For use within a single
+     organization
+   - **Accounts in any organizational directory (Any Azure AD directory - Multitenant)** - For use
+     across multiple organizations
+   - **Accounts in any organizational directory and personal Microsoft accounts** - For both work
+     accounts and personal accounts
 5. Set the Redirect URI to `http://localhost:3000/callback`
 6. After creating the app, go to "Certificates & secrets" and create a new client secret
 7. Go to "API permissions" and add the following permissions:
@@ -108,7 +114,8 @@ TENANT_ID=00000000-0000-0000-0000-000000000000
 
 ### Token Storage
 
-The server stores authentication tokens in `tokens.json` with automatic refresh 5 minutes before expiration. You can override the token file location:
+The server stores authentication tokens in `tokens.json` with automatic refresh 5 minutes before
+expiration. You can override the token file location:
 
 ```bash
 # Using environment variable
@@ -257,7 +264,8 @@ The server provides 13 tools for comprehensive Microsoft To Do management:
 
 ### Personal Microsoft Accounts
 
-- **MailboxNotEnabledForRESTAPI Error**: Personal Microsoft accounts (outlook.com, hotmail.com, live.com) have limited access to the To Do API through Microsoft Graph
+- **MailboxNotEnabledForRESTAPI Error**: Personal Microsoft accounts (outlook.com, hotmail.com,
+  live.com) have limited access to the To Do API through Microsoft Graph
 - This is a Microsoft service limitation, not an issue with this application
 - Work/school accounts have full API access
 

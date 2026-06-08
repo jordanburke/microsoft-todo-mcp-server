@@ -1,0 +1,37 @@
+{
+  "imports": {
+    "@std/path": "jsr:@std/path@^1"
+  },
+  "tasks": {
+    "dev": "deno run --allow-env --allow-read --allow-write --allow-net src/todo-index.ts",
+    "start": "deno run --allow-env --allow-read --allow-write --allow-net src/cli.ts",
+    "auth": "deno run --allow-env --allow-read --allow-write --allow-net src/auth-server.ts",
+    "config": "deno run --allow-read --allow-write src/create-mcp-config.ts",
+    "setup": "deno run --allow-env --allow-read --allow-write --allow-net --allow-run src/setup.ts",
+    "test-explore": "deno run --allow-read --allow-net test-api-exploration.ts",
+    "compile": "deno compile --allow-env --allow-read --allow-write --allow-net --output mstodo src/todo-index.ts"
+  },
+  "compilerOptions": {
+    "lib": [
+      "deno.ns",
+      "dom",
+      "esnext"
+    ]
+  },
+  "fmt": {
+    "lineWidth": 100,
+    "indentWidth": 2,
+    "semiColons": true,
+    "singleQuote": false
+  },
+  "lint": {
+    "rules": {
+      "tags": [
+        "recommended"
+      ],
+      "exclude": [
+        "no-explicit-any"
+      ]
+    }
+  }
+}

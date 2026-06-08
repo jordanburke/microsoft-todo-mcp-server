@@ -2,13 +2,16 @@
 
 ## Overview
 
-While the Microsoft Graph API doesn't expose folder/group information for To Do lists, this MCP server now includes enhanced tools that provide folder-like organization based on naming patterns and list properties.
+While the Microsoft Graph API doesn't expose folder/group information for To Do lists, this MCP
+server now includes enhanced tools that provide folder-like organization based on naming patterns
+and list properties.
 
 ## New Tools
 
 ### 1. `get-task-lists-organized`
 
-Get all task lists organized into logical folders/categories based on naming patterns, emoji prefixes, and sharing status.
+Get all task lists organized into logical folders/categories based on naming patterns, emoji
+prefixes, and sharing status.
 
 **Parameters:**
 

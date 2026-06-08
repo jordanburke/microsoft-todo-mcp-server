@@ -1,167 +1,235 @@
-#!/usr/bin/env node
+import { join } from "@std/path";
 
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs"
-import { join } from "path"
-import { homedir } from "os"
-import { spawn } from "child_process"
-import readline from "readline"
+function homedir(): string {
+  switch (Deno.build.os) {
+    case "linux":
+    case "darwin":
+      return Deno.env.get("HOME") ?? "/";
+    case "windows":
+      return (
+        (Deno.env.get("USERPROFILE") ??
+          (Deno.env.get("HOMEDRIVE") ?? "") +
+            (Deno.env.get("HOMEPATH") ?? "")) ||
+        "/"
+      );
+    default:
+      return "/";
+  }
+}
 
-const rl = readline.createInterface({
-  input: process.stdin,
-  output: process.stdout,
-})
-
-const question = (query: string): Promise<string> => {
-  return new Promise((resolve) => rl.question(query, resolve))
+function existsSync(path: string): boolean {
+  try {
+    Deno.statSync(path);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 async function setup() {
-  console.log("🚀 Microsoft To Do MCP Server Setup")
-  console.log("==================================\n")
+  console.log("🚀 Microsoft To Do MCP Server Setup");
+  console.log("==================================\n");
 
   // Check if already configured
-  const configDir =
-    process.platform === "win32"
-      ? join(process.env.APPDATA || join(homedir(), "AppData", "Roaming"), "microsoft-todo-mcp")
-      : join(homedir(), ".config", "microsoft-todo-mcp")
+  const configDir = Deno.build.os === "windows"
+    ? join(
+      Deno.env.get("APPDATA") || join(homedir(), "AppData", "Roaming"),
+      "microsoft-todo-mcp",
+    )
+    : join(homedir(), ".config", "microsoft-todo-mcp");
 
-  const tokenPath = join(configDir, "tokens.json")
+  const tokenPath = join(configDir, "tokens.json");
 
   if (existsSync(tokenPath)) {
-    const answer = await question("Tokens already exist. Reconfigure? (y/N): ")
-    if (answer.toLowerCase() !== "y") {
-      console.log("Setup cancelled.")
-      process.exit(0)
+    const answer = prompt("Tokens already exist. Reconfigure? (y/N): ");
+    if (answer?.toLowerCase() !== "y") {
+      console.log("Setup cancelled.");
+      Deno.exit(0);
     }
   }
 
   // Check for Azure app credentials
-  let hasEnvFile = existsSync(".env")
+  const hasEnvFile = existsSync(".env");
 
   if (!hasEnvFile) {
-    console.log("\n📋 Azure App Registration Required")
-    console.log("You need to create an app registration in Azure Portal first.")
-    console.log("\nSteps:")
-    console.log("1. Go to https://portal.azure.com")
-    console.log("2. Navigate to 'App registrations' and create a new registration")
-    console.log("3. Set redirect URI to: http://localhost:3000/callback")
-    console.log("4. Add these API permissions: Tasks.Read, Tasks.ReadWrite, User.Read")
-    console.log("5. Create a client secret\n")
+    console.log("\n📋 Azure App Registration Required");
+    console.log(
+      "You need to create an app registration in Azure Portal first.",
+    );
+    console.log("\nSteps:");
+    console.log("1. Go to https://portal.azure.com");
+    console.log(
+      "2. Navigate to 'App registrations' and create a new registration",
+    );
+    console.log("3. Set redirect URI to: http://localhost:3000/callback");
+    console.log(
+      "4. Add these API permissions: Tasks.Read, Tasks.ReadWrite, User.Read",
+    );
+    console.log("5. Create a client secret\n");
 
-    const clientId = await question("Enter your CLIENT_ID: ")
-    const clientSecret = await question("Enter your CLIENT_SECRET: ")
-    const tenantId = (await question("Enter your TENANT_ID (press Enter for 'organizations'): ")) || "organizations"
+    const clientId = prompt("Enter your CLIENT_ID: ") || "";
+    const clientSecret = prompt("Enter your CLIENT_SECRET: ") || "";
+    const tenantId = prompt("Enter your TENANT_ID (press Enter for 'organizations'): ") ||
+      "organizations";
 
     // Create .env file
     const envContent = `CLIENT_ID=${clientId}
 CLIENT_SECRET=${clientSecret}
 TENANT_ID=${tenantId}
 REDIRECT_URI=http://localhost:3000/callback
-`
-    writeFileSync(".env", envContent)
-    console.log("✅ Created .env file")
+`;
+    Deno.writeTextFileSync(".env", envContent);
+    console.log("✅ Created .env file");
   }
 
-  console.log("\n🔐 Starting authentication flow...")
-  console.log("A browser window will open. Please sign in with your Microsoft account.\n")
+  console.log("\n🔐 Starting authentication flow...");
+  console.log(
+    "A browser window will open. Please sign in with your Microsoft account.\n",
+  );
 
-  // Start the auth server
-  const authProcess = spawn("node", ["dist/auth-server.js"], {
-    stdio: "inherit",
-    shell: true,
-  })
+  // Start the auth server using Deno
+  const command = new Deno.Command("deno", {
+    args: [
+      "run",
+      "--allow-env",
+      "--allow-read",
+      "--allow-write",
+      "--allow-net",
+      join(Deno.cwd(), "src", "auth-server.ts"),
+    ],
+    stdin: "inherit",
+    stdout: "inherit",
+    stderr: "inherit",
+  });
 
-  authProcess.on("close", async (code) => {
-    if (code === 0) {
-      console.log("\n✅ Authentication successful!")
+  const process = command.spawn();
+  const status = await process.status;
 
-      // Check if tokens were created
-      const localTokens = join(process.cwd(), "tokens.json")
-      if (existsSync(localTokens)) {
-        // Move tokens to proper location and add client credentials
-        const tokens = JSON.parse(readFileSync(localTokens, "utf8"))
-        const env = readFileSync(".env", "utf8")
+  if (status.success) {
+    console.log("\n✅ Authentication successful!");
 
-        const clientId = env.match(/CLIENT_ID=(.+)/)?.[1]
-        const clientSecret = env.match(/CLIENT_SECRET=(.+)/)?.[1]
-        const tenantId = env.match(/TENANT_ID=(.+)/)?.[1] || "organizations"
-
-        // Store with credentials for future refreshes
-        const enhancedTokens = {
-          ...tokens,
-          clientId,
-          clientSecret,
-          tenantId,
-        }
-
-        // Create directory if needed
-        mkdirSync(configDir, { recursive: true })
-
-        // Save to proper location
-        writeFileSync(tokenPath, JSON.stringify(enhancedTokens, null, 2))
-
-        console.log(`\n📁 Tokens saved to: ${tokenPath}`)
-
-        // Update Claude config
-        await updateClaudeConfig()
-
-        console.log("\n🎉 Setup complete! Microsoft To Do MCP is ready to use.")
-        console.log("Restart Claude Desktop to activate the integration.")
+    // Check if tokens were created
+    const localTokens = join(Deno.cwd(), "tokens.json");
+    if (existsSync(localTokens)) {
+      // Move tokens to proper location and add client credentials
+      const tokens = JSON.parse(Deno.readTextFileSync(localTokens));
+      let env = "";
+      try {
+        env = Deno.readTextFileSync(".env");
+      } catch {
+        console.log("No .env file found");
       }
-    } else {
-      console.error("\n❌ Authentication failed. Please try again.")
-    }
 
-    rl.close()
-  })
+      const clientIdMatch = env.match(/CLIENT_ID=(.+)/);
+      const clientSecretMatch = env.match(/CLIENT_SECRET=(.+)/);
+      const tenantIdMatch = env.match(/TENANT_ID=(.+)/);
+
+      const clientId = clientIdMatch?.[1];
+      const clientSecret = clientSecretMatch?.[1];
+      const tenantId = tenantIdMatch?.[1] || "organizations";
+
+      // Store with credentials for future refreshes
+      const enhancedTokens = {
+        ...tokens,
+        clientId,
+        clientSecret,
+        tenantId,
+      };
+
+      // Create directory if needed
+      Deno.mkdirSync(configDir, { recursive: true });
+
+      // Save to proper location
+      Deno.writeTextFileSync(
+        tokenPath,
+        JSON.stringify(enhancedTokens, null, 2),
+      );
+
+      console.log(`\n📁 Tokens saved to: ${tokenPath}`);
+
+      // Update Claude config
+      updateClaudeConfig();
+
+      console.log("\n🎉 Setup complete! Microsoft To Do MCP is ready to use.");
+      console.log("Restart Claude Desktop to activate the integration.");
+    }
+  } else {
+    console.error("\n❌ Authentication failed. Please try again.");
+  }
 }
 
-async function updateClaudeConfig() {
-  const claudeConfigPath =
-    process.platform === "win32"
-      ? join(process.env.APPDATA || "", "Claude", "claude_desktop_config.json")
-      : process.platform === "darwin"
-        ? join(homedir(), "Library", "Application Support", "Claude", "claude_desktop_config.json")
-        : join(homedir(), ".config", "Claude", "claude_desktop_config.json")
+function updateClaudeConfig() {
+  const os = Deno.build.os;
+  const claudeConfigPath = os === "windows"
+    ? join(
+      Deno.env.get("APPDATA") || "",
+      "Claude",
+      "claude_desktop_config.json",
+    )
+    : os === "darwin"
+    ? join(
+      homedir(),
+      "Library",
+      "Application Support",
+      "Claude",
+      "claude_desktop_config.json",
+    )
+    : join(homedir(), ".config", "Claude", "claude_desktop_config.json");
 
   if (!existsSync(claudeConfigPath)) {
-    console.log("\n⚠️  Claude config not found. Add this to your Claude desktop config manually:")
+    console.log(
+      "\n⚠️  Claude config not found. Add this to your Claude desktop config manually:",
+    );
     console.log(
       JSON.stringify(
         {
           "microsoft-todo": {
-            command: "npx",
-            args: ["microsoft-todo-mcp-server"],
+            command: "deno",
+            args: [
+              "run",
+              "--allow-env",
+              "--allow-read",
+              "--allow-write",
+              "--allow-net",
+              join(Deno.cwd(), "src", "todo-index.ts"),
+            ],
             env: {},
           },
         },
         null,
         2,
       ),
-    )
-    return
+    );
+    return;
   }
 
   try {
-    const config = JSON.parse(readFileSync(claudeConfigPath, "utf8"))
+    const config = JSON.parse(Deno.readTextFileSync(claudeConfigPath));
 
     // Add or update the microsoft-todo server config
     if (!config.mcpServers) {
-      config.mcpServers = {}
+      config.mcpServers = {};
     }
 
     config.mcpServers["microsoft-todo"] = {
-      command: "npx",
-      args: ["microsoft-todo-mcp-server"],
+      command: "deno",
+      args: [
+        "run",
+        "--allow-env",
+        "--allow-read",
+        "--allow-write",
+        "--allow-net",
+        join(Deno.cwd(), "src", "todo-index.ts"),
+      ],
       env: {}, // No need for tokens in env anymore!
-    }
+    };
 
-    writeFileSync(claudeConfigPath, JSON.stringify(config, null, 2))
-    console.log("\n✅ Updated Claude Desktop configuration")
+    Deno.writeTextFileSync(claudeConfigPath, JSON.stringify(config, null, 2));
+    console.log("\n✅ Updated Claude Desktop configuration");
   } catch (error) {
-    console.error("\n⚠️  Could not update Claude config automatically:", error)
+    console.error("\n⚠️  Could not update Claude config automatically:", error);
   }
 }
 
 // Run setup
-setup().catch(console.error)
+setup().catch(console.error);

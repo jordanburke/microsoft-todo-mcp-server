@@ -1,65 +1,80 @@
 # Standard Build Commands for TypeScript/JavaScript Projects
 
 ## Overview
-This document defines a standardized set of npm/pnpm scripts that should be used across all repositories for consistency and developer experience.
+
+This document defines a standardized set of npm/pnpm scripts that should be used across all
+repositories for consistency and developer experience.
 
 ## Core Commands
 
 ### 1. **`check`** - Quick validation (no build)
+
 ```json
 "check": "pnpm run format:check && pnpm run typecheck"
 ```
+
 - Validates code formatting
 - Checks TypeScript types
 - Fast feedback loop for developers
 
 ### 2. **`check:fix`** - Auto-fix issues
+
 ```json
 "check:fix": "pnpm run format && pnpm run typecheck"
 ```
+
 - Automatically fixes formatting issues
 - Still validates types (can't auto-fix)
 
 ### 3. **`ci`** - Complete CI validation
+
 ```json
 "ci": "pnpm run check && pnpm run build && pnpm run test"
 ```
+
 - Full validation suite for CI/CD pipelines
 - Ensures code is ready for production
 
 ### 4. **`precommit`** - Pre-commit hook
+
 ```json
 "precommit": "pnpm run check:fix && pnpm run build"
 ```
+
 - Auto-fixes what it can
 - Prevents bad commits
 
 ## Individual Commands
 
 ### Formatting
+
 ```json
 "format": "prettier --write \"src/**/*.{ts,js,json}\" \"*.{json,md}\"",
 "format:check": "prettier --check \"src/**/*.{ts,js,json}\" \"*.{json,md}\""
 ```
 
 ### Linting (if using ESLint)
+
 ```json
 "lint": "eslint . --ext .ts,.tsx,.js,.jsx",
 "lint:fix": "eslint . --ext .ts,.tsx,.js,.jsx --fix"
 ```
 
 ### Type Checking
+
 ```json
 "typecheck": "tsc --noEmit"
 ```
 
 ### Building
+
 ```json
 "build": "tsup",  // or your build tool
 "build:watch": "tsup --watch"
 ```
 
 ### Testing
+
 ```json
 "test": "vitest",
 "test:watch": "vitest --watch",
@@ -75,25 +90,25 @@ This document defines a standardized set of npm/pnpm scripts that should be used
     "dev": "tsx watch src/index.ts",
     "build": "tsup",
     "build:watch": "tsup --watch",
-    
+
     // Code Quality
     "format": "prettier --write \"src/**/*.{ts,js,json}\" \"*.{json,md}\"",
     "format:check": "prettier --check \"src/**/*.{ts,js,json}\" \"*.{json,md}\"",
     "lint": "eslint . --ext .ts,.tsx,.js,.jsx",
     "lint:fix": "eslint . --ext .ts,.tsx,.js,.jsx --fix",
     "typecheck": "tsc --noEmit",
-    
+
     // Testing
     "test": "vitest",
     "test:watch": "vitest --watch",
     "test:coverage": "vitest --coverage",
-    
+
     // Composite Commands
     "check": "pnpm run format:check && pnpm run lint && pnpm run typecheck",
     "check:fix": "pnpm run format && pnpm run lint:fix && pnpm run typecheck",
     "ci": "pnpm run check && pnpm run build && pnpm run test",
     "precommit": "pnpm run check:fix && pnpm run build",
-    
+
     // Production
     "start": "node dist/index.js",
     "clean": "rm -rf dist coverage .turbo"
@@ -104,11 +119,13 @@ This document defines a standardized set of npm/pnpm scripts that should be used
 ## Usage Patterns
 
 ### For Developers
+
 1. **During development**: Use `pnpm run dev` for hot reloading
 2. **Before committing**: Run `pnpm run check:fix` to auto-fix issues
 3. **To validate changes**: Run `pnpm run check` for quick validation
 
 ### For CI/CD
+
 1. **GitHub Actions**: Use `pnpm run ci` in your workflow
 2. **Pre-commit hooks**: Configure husky to run `pnpm run precommit`
 3. **PR checks**: Require `pnpm run ci` to pass
@@ -116,6 +133,7 @@ This document defines a standardized set of npm/pnpm scripts that should be used
 ### For Different Project Types
 
 #### Library/Package
+
 ```json
 {
   "scripts": {
@@ -126,6 +144,7 @@ This document defines a standardized set of npm/pnpm scripts that should be used
 ```
 
 #### Application
+
 ```json
 {
   "scripts": {
@@ -136,6 +155,7 @@ This document defines a standardized set of npm/pnpm scripts that should be used
 ```
 
 ## Benefits
+
 1. **Consistency**: Same commands work across all repos
 2. **Discoverability**: New developers know what to run
 3. **CI/CD Integration**: Standard `ci` command for all pipelines
