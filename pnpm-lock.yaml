@@ -31,8 +31,8 @@ importers:
         specifier: ^22.19.21
         version: 22.19.21
       ts-builds:
-        specifier: 3.1.1
-        version: 3.1.1(@typescript-eslint/eslint-plugin@8.61.0(@typescript-eslint/parser@8.61.0(eslint@10.5.0)(typescript@6.0.3))(eslint@10.5.0)(typescript@6.0.3))(@typescript-eslint/parser@8.61.0(eslint@10.5.0)(typescript@6.0.3))(tsdown@0.22.2(typescript@6.0.3))(vite@8.0.16(@types/node@22.19.21))
+        specifier: ^3.2.0
+        version: 3.2.0(@typescript-eslint/eslint-plugin@8.61.0(@typescript-eslint/parser@8.61.0(eslint@10.5.0)(typescript@6.0.3))(eslint@10.5.0)(typescript@6.0.3))(@typescript-eslint/parser@8.61.0(eslint@10.5.0)(typescript@6.0.3))(tsdown@0.22.2(typescript@6.0.3))(vite@8.0.16(@types/node@22.19.21))
       tsdown:
         specifier: ^0.22.2
         version: 0.22.2(typescript@6.0.3)
@@ -1585,8 +1585,8 @@ packages:
     peerDependencies:
       typescript: '>=4.8.4'
 
-  ts-builds@3.1.1:
-    resolution: {integrity: sha512-JUve4D+cxisTVDv91jG1d5Z3U+/wSw3hoFXh+7BnS9Swx9NZw7NBBJalOkz95+wg4QXUpdBgTmYr3xC0MSzh7w==}
+  ts-builds@3.2.0:
+    resolution: {integrity: sha512-Ulv0s+TYrWKNzMNvAO6j/RFmoH9EfRibsWVHJlmNxbJJg9cxTDgu2/JcZkjFYpP3EJ7VOpgsJyty+156TOIWcQ==}
     engines: {node: '>=22'}
     hasBin: true
     peerDependencies:
@@ -3298,7 +3298,7 @@ snapshots:
     dependencies:
       typescript: 6.0.3
 
-  ts-builds@3.1.1(@typescript-eslint/eslint-plugin@8.61.0(@typescript-eslint/parser@8.61.0(eslint@10.5.0)(typescript@6.0.3))(eslint@10.5.0)(typescript@6.0.3))(@typescript-eslint/parser@8.61.0(eslint@10.5.0)(typescript@6.0.3))(tsdown@0.22.2(typescript@6.0.3))(vite@8.0.16(@types/node@22.19.21)):
+  ts-builds@3.2.0(@typescript-eslint/eslint-plugin@8.61.0(@typescript-eslint/parser@8.61.0(eslint@10.5.0)(typescript@6.0.3))(eslint@10.5.0)(typescript@6.0.3))(@typescript-eslint/parser@8.61.0(eslint@10.5.0)(typescript@6.0.3))(tsdown@0.22.2(typescript@6.0.3))(vite@8.0.16(@types/node@22.19.21)):
     dependencies:
       '@eslint/js': 10.0.1(eslint@10.5.0)
       '@types/node': 24.10.15
