@@ -4,8 +4,8 @@ minimumReleaseAgeExclude:
   - eslint-config-functype@2.104.1
   - eslint-plugin-functype@2.104.1
   - functype-os@1.4.1
-  - functype@1.4.1
-  - ts-builds@3.1.1
+  - "*functype*"
+  - ts-builds
 publicHoistPattern:
   - "*eslint*"
   - "*prettier*"
