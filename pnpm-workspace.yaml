@@ -1,11 +1,11 @@
 allowBuilds:
   esbuild: false # binary ships via @esbuild/<platform> optional deps; build script not needed
 minimumReleaseAgeExclude:
-  - eslint-config-functype@2.104.1
-  - eslint-plugin-functype@2.104.1
-  - functype-os@1.4.1
-  - functype@1.4.1
-  - ts-builds@3.1.1
+  # First-party packages — covered at all versions so releases don't re-trip the
+  # pnpm 11 minimumReleaseAge cooldown. "*functype*" covers functype, functype-os,
+  # and eslint-{config,plugin}-functype.
+  - "*functype*"
+  - ts-builds
 publicHoistPattern:
   - "*eslint*"
   - "*prettier*"
