@@ -1,7 +1,7 @@
 // src/token-manager.ts
-import { readFileSync, writeFileSync, existsSync } from "fs"
-import { join } from "path"
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs"
 import { homedir } from "os"
+import { join } from "path"
 
 interface TokenData {
   accessToken: string
@@ -28,7 +28,7 @@ export class TokenManager {
 
     // Create directory if it doesn't exist
     if (!existsSync(configDir)) {
-      require("fs").mkdirSync(configDir, { recursive: true })
+      mkdirSync(configDir, { recursive: true })
     }
 
     this.tokenFilePath = join(configDir, "tokens.json")

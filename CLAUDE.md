@@ -7,10 +7,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ### Build and Development
 
 ```bash
-pnpm install         # Install dependencies
-pnpm run build       # Build with tsup to build/ directory
+pnpm install         # Install dependencies (pnpm 11)
+pnpm run build       # Build with ts-builds (tsdown) to dist/ directory
 pnpm run dev         # Build and run CLI in one command
+pnpm run validate    # Full chain: format, lint, typecheck, test, build
 ```
+
+Build tooling is provided by **ts-builds** (3.x); package scripts delegate to the
+`ts-builds` CLI. Output extension is forced to `.js` via `tsdown.config.ts` so the
+`bin`/`main` paths and `./*.js` source imports keep resolving.
 
 ### Authentication and Setup
 
@@ -57,7 +62,7 @@ The server communicates with Microsoft Graph API v1.0:
 
 ## Important Notes
 
-- Always run `pnpm run build` after modifying TypeScript files (uses tsup for bundling)
+- Always run `pnpm run build` (or `pnpm run validate`) after modifying TypeScript files (ts-builds/tsdown bundling)
 - The auth server runs on port 3000 by default
 - Tokens are automatically refreshed using the refresh token when needed
 - Personal Microsoft accounts have limited API access compared to work/school accounts

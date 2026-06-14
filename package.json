@@ -11,24 +11,23 @@
     "zod": "^3.25.76"
   },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "build": "tsup",
-    "build:win": "tsup && node -e \"console.log('Build complete')\"",
+    "validate": "ts-builds validate",
+    "build": "ts-builds build",
+    "build:watch": "ts-builds build:watch",
+    "dev": "ts-builds build && node dist/cli.js",
     "start": "node dist/todo-index.js",
     "cli": "node dist/cli.js",
     "auth": "node dist/auth-server.js",
     "setup": "node dist/setup.js",
-    "dev": "pnpm run build && node dist/cli.js",
     "create-config": "node dist/create-mcp-config.js",
-    "format": "prettier --write \"src/**/*.{ts,js,json}\" \"*.{json,md}\"",
-    "format:check": "prettier --check \"src/**/*.{ts,js,json}\" \"*.{json,md}\"",
-    "lint": "pnpm run format:check",
-    "typecheck": "tsc --noEmit",
-    "check": "pnpm run format:check && pnpm run typecheck",
-    "check:fix": "pnpm run format && pnpm run typecheck",
-    "ci": "pnpm run check && pnpm run build",
-    "precommit": "pnpm run check:fix && pnpm run build",
-    "prepublishOnly": "pnpm run ci",
+    "format": "ts-builds format",
+    "format:check": "ts-builds format:check",
+    "lint": "ts-builds lint",
+    "lint:check": "ts-builds lint:check",
+    "typecheck": "ts-builds typecheck",
+    "test": "ts-builds test",
+    "test:watch": "ts-builds test:watch",
+    "prepublishOnly": "pnpm validate",
     "postinstall": "echo 'Run: npx microsoft-todo-mcp-server setup' to configure"
   },
   "repository": {
@@ -51,9 +50,8 @@
   "devDependencies": {
     "@types/express": "^5.0.5",
     "@types/node": "^22.19.0",
-    "prettier": "^3.6.2",
-    "tsup": "^8.5.0",
-    "typescript": "^5.9.3"
+    "ts-builds": "3.1.1",
+    "tsdown": "^0.22.2"
   },
   "type": "module",
   "bin": {
@@ -68,5 +66,5 @@
   "publishConfig": {
     "access": "public"
   },
-  "packageManager": "pnpm@10.21.0+sha512.da3337267e400fdd3d479a6c68079ac6db01d8ca4f67572083e722775a796788a7a9956613749e000fac20d424b594f7a791a5f4e2e13581c5ef947f26968a40"
+  "packageManager": "pnpm@11.6.0+sha512.9a36518224080c6fe5165afdcfe79bfa118c29be703f3f462b1e32efe1e98e47e8750b148e08286250aad4113cc7993ca413c4e2cd447752708c2ee5751bc95f"
 }

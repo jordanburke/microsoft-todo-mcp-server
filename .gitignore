@@ -9,6 +9,10 @@ yarn.lock
 # Build output
 build/
 dist/
+lib/
+
+# Test coverage
+coverage/
 
 # Environment variables
 .env*

@@ -1,9 +1,10 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
-import { z } from "zod"
-import { readFileSync, writeFileSync, existsSync } from "fs"
-import { join } from "path"
 import dotenv from "dotenv"
+import { existsSync, readFileSync, writeFileSync } from "fs"
+import { join } from "path"
+import { z } from "zod"
+
 import { tokenManager } from "./token-manager.js"
 
 // Load environment variables
@@ -456,75 +457,62 @@ server.tool(
         }
 
         lists.forEach((list) => {
-          let placed = false
-
           // Check archived pattern
           const archiveMatch = list.displayName.match(patterns.archived)
           if (archiveMatch) {
             const category = `📦 Archived - ${archiveMatch[1]}`
             if (!organized[category]) organized[category] = []
             organized[category].push(list)
-            placed = true
           }
           // Check archive prefix
           else if (patterns.archive.test(list.displayName)) {
             if (!organized["📦 Archives"]) organized["📦 Archives"] = []
             organized["📦 Archives"].push(list)
-            placed = true
           }
           // Check shopping lists
           else if (patterns.shopping.test(list.displayName)) {
             if (!organized["🛒 Shopping Lists"]) organized["🛒 Shopping Lists"] = []
             organized["🛒 Shopping Lists"].push(list)
-            placed = true
           }
           // Check property lists
           else if (patterns.property.test(list.displayName)) {
             if (!organized["🏡 Properties"]) organized["🏡 Properties"] = []
             organized["🏡 Properties"].push(list)
-            placed = true
           }
           // Check family lists
           else if (patterns.family.test(list.displayName)) {
             if (!organized["👪 Family"]) organized["👪 Family"] = []
             organized["👪 Family"].push(list)
-            placed = true
           }
           // Check seasonal lists
           else if (patterns.seasonal.test(list.displayName)) {
             if (!organized["🎉 Seasonal & Events"]) organized["🎉 Seasonal & Events"] = []
             organized["🎉 Seasonal & Events"].push(list)
-            placed = true
           }
           // Check work lists
           else if (patterns.work.test(list.displayName)) {
             if (!organized["💼 Work"]) organized["💼 Work"] = []
             organized["💼 Work"].push(list)
-            placed = true
           }
           // Check travel lists
           else if (patterns.travel.test(list.displayName)) {
             if (!organized["🚗 Travel & Rangeley"]) organized["🚗 Travel & Rangeley"] = []
             organized["🚗 Travel & Rangeley"].push(list)
-            placed = true
           }
           // Check reading lists
           else if (patterns.reading.test(list.displayName)) {
             if (!organized["📚 Reading"]) organized["📚 Reading"] = []
             organized["📚 Reading"].push(list)
-            placed = true
           }
           // Special lists
           else if (list.wellknownListName && list.wellknownListName !== "none") {
             if (!organized["⭐ Special Lists"]) organized["⭐ Special Lists"] = []
             organized["⭐ Special Lists"].push(list)
-            placed = true
           }
-          // Shared lists (only if not already placed)
-          else if (list.isShared && !placed) {
+          // Shared lists
+          else if (list.isShared) {
             if (!organized["👥 Shared Lists"]) organized["👥 Shared Lists"] = []
             organized["👥 Shared Lists"].push(list)
-            placed = true
           }
           // Everything else
           else {
@@ -585,7 +573,7 @@ server.tool(
           let listInfo = `${prefix} ${list.displayName}`
 
           // Add metadata
-          const metadata = []
+          const metadata: string[] = []
           if (list.wellknownListName === "defaultList") metadata.push("Default")
           if (list.wellknownListName === "flaggedEmails") metadata.push("Flagged Emails")
           if (list.isShared && list.isOwner) metadata.push("Shared by you")
@@ -1677,7 +1665,7 @@ server.tool(
 
       // Actually archive the tasks
       let successCount = 0
-      let failedTasks: string[] = []
+      const failedTasks: string[] = []
 
       for (const task of tasksToArchive) {
         try {

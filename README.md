@@ -250,7 +250,7 @@ The server provides 13 tools for comprehensive Microsoft To Do management:
 - **Microsoft Graph API**: Uses v1.0 endpoints
 - **Authentication**: MSAL (Microsoft Authentication Library) with PKCE flow
 - **Token Management**: Automatic refresh 5 minutes before expiration
-- **Build System**: tsup for fast TypeScript compilation
+- **Build System**: ts-builds (tsdown) for fast TypeScript compilation
 - **Module System**: ESM (ECMAScript modules)
 
 ## Limitations & Known Issues

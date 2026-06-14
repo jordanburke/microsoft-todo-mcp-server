@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs"
-import { join } from "path"
-import { homedir } from "os"
 import { spawn } from "child_process"
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs"
+import { homedir } from "os"
+import { join } from "path"
 import readline from "readline"
 
 const rl = readline.createInterface({
@@ -36,7 +36,7 @@ async function setup() {
   }
 
   // Check for Azure app credentials
-  let hasEnvFile = existsSync(".env")
+  const hasEnvFile = existsSync(".env")
 
   if (!hasEnvFile) {
     console.log("\n📋 Azure App Registration Required")
