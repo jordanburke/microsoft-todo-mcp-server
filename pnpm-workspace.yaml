@@ -11,3 +11,4 @@ publicHoistPattern:
   - "*prettier*"
   - "*vitest*"
   - "typescript"
+  - "globals" # required by eslint.config.js; not matched by *eslint* (ts-builds init omits it)
