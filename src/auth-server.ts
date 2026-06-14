@@ -1,15 +1,15 @@
 // Authentication server for Microsoft Todo MCP service
-import dotenv from "dotenv"
-import express, { Request, Response } from "express"
-import fs from "fs"
-import { join, dirname } from "path"
 import {
-  ConfidentialClientApplication,
   AccountInfo,
   AuthenticationResult,
+  ConfidentialClientApplication,
   Configuration,
   LogLevel,
 } from "@azure/msal-node"
+import dotenv from "dotenv"
+import express, { Request, Response } from "express"
+import fs from "fs"
+import { dirname, join } from "path"
 import { fileURLToPath } from "url"
 
 // Initialize environment variables
