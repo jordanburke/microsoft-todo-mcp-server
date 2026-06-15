@@ -251,12 +251,34 @@ interface TaskList {
   wellknownListName?: string // 'none', 'defaultList', 'flaggedEmails', 'unknownFutureValue'
 }
 
+interface RecurrencePattern {
+  type: "daily" | "weekly" | "absoluteMonthly" | "relativeMonthly" | "absoluteYearly" | "relativeYearly"
+  interval: number
+  daysOfWeek?: string[]
+  dayOfMonth?: number
+  weekIndex?: "first" | "second" | "third" | "fourth" | "last"
+  month?: number
+  firstDayOfWeek?: string
+}
+
+interface RecurrenceRange {
+  type: "endDate" | "noEnd" | "numbered"
+  startDate: string
+  endDate?: string
+  numberOfOccurrences?: number
+  recurrenceTimeZone?: string
+}
+
 interface Task {
   id: string
   title: string
   status: string
   importance: string
   dueDateTime?: {
+    dateTime: string
+    timeZone: string
+  }
+  startDateTime?: {
     dateTime: string
     timeZone: string
   }
@@ -273,6 +295,14 @@ interface Task {
     contentType: string
   }
   categories?: string[]
+  recurrence?: {
+    pattern: RecurrencePattern
+    range: RecurrenceRange
+  }
+  createdDateTime?: string
+  lastModifiedDateTime?: string
+  bodyLastModifiedDateTime?: string
+  hasAttachments?: boolean
 }
 
 interface ChecklistItem {
@@ -875,6 +905,11 @@ server.tool(
           taskInfo = `${status} ${taskInfo}`
         }
 
+        // Add start date if available
+        if (task.startDateTime) {
+          taskInfo += `\nStart: ${new Date(task.startDateTime.dateTime).toLocaleDateString()}`
+        }
+
         // Add due date if available
         if (task.dueDateTime) {
           taskInfo += `\nDue: ${new Date(task.dueDateTime.dateTime).toLocaleDateString()}`
@@ -890,6 +925,24 @@ server.tool(
           taskInfo += `\nCategories: ${task.categories.join(", ")}`
         }
 
+        // Add recurrence if available
+        if (task.recurrence) {
+          const p = task.recurrence.pattern
+          const r = task.recurrence.range
+          const rangeDesc =
+            r.type === "endDate"
+              ? ` until ${r.endDate}`
+              : r.type === "numbered"
+                ? ` for ${r.numberOfOccurrences} occurrences`
+                : " (no end)"
+          taskInfo += `\nRecurrence: every ${p.interval} ${p.type}${rangeDesc}`
+        }
+
+        // Add attachments flag if present
+        if (task.hasAttachments) {
+          taskInfo += `\nHas Attachments: yes`
+        }
+
         // Add body content if available and not empty
         if (task.body && task.body.content && task.body.content.trim() !== "") {
           const previewLength = 50
@@ -898,6 +951,15 @@ server.tool(
               ? task.body.content.substring(0, previewLength) + "..."
               : task.body.content
           taskInfo += `\nDescription: ${contentPreview}`
+        }
+
+        // Add timestamps if available
+        if (task.createdDateTime) {
+          taskInfo += `\nCreated: ${new Date(task.createdDateTime).toLocaleString()}`
+        }
+
+        if (task.lastModifiedDateTime) {
+          taskInfo += `\nModified: ${new Date(task.lastModifiedDateTime).toLocaleString()}`
         }
 
         return `${taskInfo}\n---`
@@ -947,6 +1009,27 @@ server.tool(
       .optional()
       .describe("Status of the task"),
     categories: z.array(z.string()).optional().describe("Categories associated with the task"),
+    recurrence: z
+      .object({
+        pattern: z.object({
+          type: z.enum(["daily", "weekly", "absoluteMonthly", "relativeMonthly", "absoluteYearly", "relativeYearly"]),
+          interval: z.number().int().min(1),
+          daysOfWeek: z.array(z.string()).optional(),
+          dayOfMonth: z.number().int().optional(),
+          weekIndex: z.enum(["first", "second", "third", "fourth", "last"]).optional(),
+          month: z.number().int().optional(),
+          firstDayOfWeek: z.string().optional(),
+        }),
+        range: z.object({
+          type: z.enum(["endDate", "noEnd", "numbered"]),
+          startDate: z.string().describe("Start date in YYYY-MM-DD format"),
+          endDate: z.string().optional().describe("End date in YYYY-MM-DD format (required when type is endDate)"),
+          numberOfOccurrences: z.number().int().optional().describe("Number of occurrences (required when type is numbered)"),
+          recurrenceTimeZone: z.string().optional(),
+        }),
+      })
+      .optional()
+      .describe("Recurrence pattern for repeating tasks"),
   },
   async ({
     listId,
@@ -959,6 +1042,7 @@ server.tool(
     reminderDateTime,
     status,
     categories,
+    recurrence,
   }) => {
     try {
       const token = await getAccessToken()
@@ -1021,6 +1105,10 @@ server.tool(
         taskBody.categories = categories
       }
 
+      if (recurrence) {
+        taskBody.recurrence = recurrence
+      }
+
       const response = await makeGraphRequest<Task>(
         `${MS_GRAPH_BASE}/me/todo/lists/${listId}/tasks`,
         token,
@@ -1078,6 +1166,28 @@ server.tool(
       .optional()
       .describe("New status of the task"),
     categories: z.array(z.string()).optional().describe("New categories associated with the task"),
+    recurrence: z
+      .object({
+        pattern: z.object({
+          type: z.enum(["daily", "weekly", "absoluteMonthly", "relativeMonthly", "absoluteYearly", "relativeYearly"]),
+          interval: z.number().int().min(1),
+          daysOfWeek: z.array(z.string()).optional(),
+          dayOfMonth: z.number().int().optional(),
+          weekIndex: z.enum(["first", "second", "third", "fourth", "last"]).optional(),
+          month: z.number().int().optional(),
+          firstDayOfWeek: z.string().optional(),
+        }),
+        range: z.object({
+          type: z.enum(["endDate", "noEnd", "numbered"]),
+          startDate: z.string().describe("Start date in YYYY-MM-DD format"),
+          endDate: z.string().optional().describe("End date in YYYY-MM-DD format (required when type is endDate)"),
+          numberOfOccurrences: z.number().int().optional().describe("Number of occurrences (required when type is numbered)"),
+          recurrenceTimeZone: z.string().optional(),
+        }),
+      })
+      .nullable()
+      .optional()
+      .describe("Recurrence pattern. Set to null to remove recurrence from the task."),
   },
   async ({
     listId,
@@ -1091,6 +1201,7 @@ server.tool(
     reminderDateTime,
     status,
     categories,
+    recurrence,
   }) => {
     try {
       const token = await getAccessToken()
@@ -1170,6 +1281,11 @@ server.tool(
 
       if (categories !== undefined) {
         taskBody.categories = categories
+      }
+
+      if (recurrence !== undefined) {
+        // null removes recurrence; an object sets it
+        taskBody.recurrence = recurrence
       }
 
       // Make sure we have at least one property to update

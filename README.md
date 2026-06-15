@@ -7,7 +7,7 @@ A Model Context Protocol (MCP) server that enables AI assistants like Claude and
 
 ## Features
 
-- **15 MCP Tools**: Complete task management functionality including lists, tasks, checklist items, and organization features
+- **16 MCP Tools**: Complete task management functionality including lists, tasks, checklist items, bulk archiving, and organization features
 - **Seamless Authentication**: Automatic token refresh with zero manual intervention
 - **OAuth 2.0 Authentication**: Secure authentication with automatic token refresh
 - **Microsoft Graph API Integration**: Direct integration with Microsoft's official API
@@ -207,7 +207,7 @@ pnpm run typecheck    # TypeScript type checking
 
 ## MCP Tools
 
-The server provides 13 tools for comprehensive Microsoft To Do management:
+The server provides 16 tools for comprehensive Microsoft To Do management:
 
 ### Authentication
 
@@ -216,6 +216,7 @@ The server provides 13 tools for comprehensive Microsoft To Do management:
 ### Task Lists (Top-level Containers)
 
 - **`get-task-lists`** - Retrieve all task lists with metadata (default, shared, etc.)
+- **`get-task-lists-organized`** - Get all task lists organized into logical folders/categories based on naming patterns, emoji prefixes, and sharing status. Supports grouping by `category`, `shared`, or `type`
 - **`create-task-list`** - Create a new task list
 - **`update-task-list`** - Rename an existing task list
 - **`delete-task-list`** - Delete a task list and all its contents
@@ -235,6 +236,10 @@ The server provides 13 tools for comprehensive Microsoft To Do management:
 - **`create-checklist-item`** - Add a new subtask to a task
 - **`update-checklist-item`** - Update subtask text or completion status
 - **`delete-checklist-item`** - Remove a specific subtask
+
+### Bulk Operations
+
+- **`archive-completed-tasks`** - Move completed tasks older than a specified number of days from one list to an archive list. Supports dry-run mode to preview what would be archived before committing changes
 
 ## Architecture
 
