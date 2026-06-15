@@ -18,6 +18,10 @@ interface StoredTokenData extends TokenData {
 export class TokenManager {
   private tokenFilePath: string
   private currentTokens: StoredTokenData | null = null
+  // Epoch ms of the last failed refresh; throttles retries so a dead refresh
+  // token can't trigger a token-endpoint call on every request.
+  private lastRefreshFailedAt = 0
+  private static readonly REFRESH_RETRY_COOLDOWN_MS = 60 * 1000
 
   constructor() {
     // Store tokens in a consistent location across platforms
@@ -39,21 +43,46 @@ export class TokenManager {
   async getTokens(): Promise<TokenData | null> {
     // 1. Check environment variables first (for backward compatibility)
     if (process.env.MS_TODO_ACCESS_TOKEN && process.env.MS_TODO_REFRESH_TOKEN) {
-      const envTokens: TokenData = {
-        accessToken: process.env.MS_TODO_ACCESS_TOKEN,
-        refreshToken: process.env.MS_TODO_REFRESH_TOKEN,
-        expiresAt: Date.now() + 3600 * 1000, // Assume 1 hour if not specified
+      // Reuse a token already refreshed earlier in this process while it is
+      // still valid, so we don't hit the token endpoint on every request.
+      if (this.currentTokens && Date.now() < this.currentTokens.expiresAt) {
+        return this.currentTokens
       }
 
-      // Check if expired
-      if (Date.now() > envTokens.expiresAt) {
-        // Try to refresh
-        const refreshed = await this.refreshToken(envTokens.refreshToken)
+      // The env access token is a one-time seed whose real expiry we don't know
+      // — it may have been minted on a previous day. The old code fabricated a
+      // "now + 1h" expiry, so a stale seed was treated as valid and never
+      // refreshed: env-configured setups worked on day one and 401'd every day
+      // after. Refresh on cold start to always present a valid Graph token.
+      //
+      // Two guards keep this from regressing setups that can't refresh:
+      //   - Skip when client credentials are absent — the v2 token endpoint
+      //     requires them, so an env-only config without CLIENT_ID/CLIENT_SECRET
+      //     keeps its prior behavior of using the seed token as-is.
+      //   - Back off for REFRESH_RETRY_COOLDOWN_MS after a failed refresh so a
+      //     dead refresh token can't hit the token endpoint on every request
+      //     (the 401-retry path would otherwise double the calls).
+      const haveClientCreds = Boolean(
+        (this.currentTokens?.clientId || process.env.CLIENT_ID) &&
+        (this.currentTokens?.clientSecret || process.env.CLIENT_SECRET),
+      )
+      const cooledDown = Date.now() - this.lastRefreshFailedAt > TokenManager.REFRESH_RETRY_COOLDOWN_MS
+      if (haveClientCreds && cooledDown) {
+        const refreshed = await this.refreshToken(process.env.MS_TODO_REFRESH_TOKEN)
         if (refreshed) {
           return refreshed
         }
+        this.lastRefreshFailedAt = Date.now()
       }
-      return envTokens
+
+      // Last resort: hand back the seed token as-is. Leave it marked expired
+      // (don't fabricate a future expiry) so a later call retries the refresh
+      // after the cooldown instead of trusting a possibly-dead token for an hour.
+      return {
+        accessToken: process.env.MS_TODO_ACCESS_TOKEN,
+        refreshToken: process.env.MS_TODO_REFRESH_TOKEN,
+        expiresAt: Date.now(),
+      }
     }
 
     // 2. Check stored token file
