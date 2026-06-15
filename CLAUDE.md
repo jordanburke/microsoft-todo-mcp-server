@@ -31,6 +31,17 @@ pnpm run cli         # Run MCP server via CLI wrapper
 pnpm start           # Run MCP server directly
 ```
 
+## ts-builds & pnpm 11 Notes
+
+Built with **ts-builds 3.2.0** (tsdown) on **pnpm 11**. Non-obvious, load-bearing constraints:
+
+- **Node >= 22.13 required.** pnpm 11 crashes on Node 20 (`ERR_UNKNOWN_BUILTIN_MODULE`). CI runs Node 22.x/24.x; the publish workflow uses Node 24 (`.nvmrc`).
+- **Keep `globals` in `publicHoistPattern`** (`pnpm-workspace.yaml`). `eslint.config.js` imports `globals`, which `*eslint*` does not match. Without the explicit hoist line, resolution falls back to pnpm's incidental `.pnpm` virtual-store hoist — passes locally but **fails CI** with `Cannot find package 'globals'`. It is load-bearing, not redundant; ts-builds 3.2.0 only adds it for _new_ `init`s, it does not retro-fit this file.
+- **First-party release-age excludes are globs, not pins.** `minimumReleaseAgeExclude` is `*functype*` + `ts-builds`. `pnpm add` auto-adds per-version pins for first-party packages within the 24h cooldown — collapse them back to the glob (pins re-trip on every release).
+- **`allowBuilds: esbuild: false`** is required under pnpm 11 `strictDepBuilds` (esbuild's binary ships via `@esbuild/<platform>` optional deps; build script not needed).
+- **tsdown emits `.js`, not `.mjs`.** `tsdown.config.ts` forces `outExtensions: () => ({ js: ".js" })` so the `bin`/`main` paths and `./*.js` imports resolve. Don't drop it.
+- **`pnpm install` in a non-TTY shell** may abort with `ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY` — prefix with `CI=true`. Note `CI=true` makes `--frozen-lockfile` the default, so add `--no-frozen-lockfile` when intentionally updating the lockfile.
+
 ## Architecture Overview
 
 This is a Model Context Protocol (MCP) server that enables AI assistants to interact with Microsoft To Do via the Microsoft Graph API. The codebase follows a modular architecture with four main components:
