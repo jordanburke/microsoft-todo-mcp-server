@@ -145,7 +145,16 @@ export class TokenManager {
         client_secret: clientSecret,
         refresh_token: refreshToken,
         grant_type: "refresh_token",
-        scope: "offline_access Tasks.Read Tasks.ReadWrite Tasks.Read.Shared Tasks.ReadWrite.Shared User.Read",
+        // Request fully-qualified Microsoft Graph scope URIs. This is a
+        // hand-rolled refresh (raw form POST, not MSAL), so nothing prepends the
+        // resource the way the initial MSAL auth flow does. Bare scope names
+        // (Tasks.ReadWrite) resolve unreliably for personal (MSA/consumers)
+        // accounts and Graph rejects the refreshed token with IDX14100 ("JWT is
+        // not well formed"). The fully-qualified form is the canonical expansion
+        // of the bare names, so it is equivalent for work/school accounts and
+        // fixes personal ones.
+        scope:
+          "offline_access https://graph.microsoft.com/Tasks.Read https://graph.microsoft.com/Tasks.ReadWrite https://graph.microsoft.com/Tasks.Read.Shared https://graph.microsoft.com/Tasks.ReadWrite.Shared https://graph.microsoft.com/User.Read",
       })
 
       const response = await fetch(tokenEndpoint, {
