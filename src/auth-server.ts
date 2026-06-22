@@ -28,7 +28,7 @@ const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
 
 const app = express()
-const port = 3000
+const port = parseInt(process.env.AUTH_PORT || "3000")
 const TOKEN_FILE_PATH = join(process.cwd(), "tokens.json")
 
 // Determine the tenant ID to use:
