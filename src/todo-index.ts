@@ -1,8 +1,6 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import dotenv from "dotenv"
-import { existsSync, readFileSync, writeFileSync } from "fs"
-import { join } from "path"
 import { z } from "zod"
 
 import { tokenManager } from "./token-manager.js"
@@ -23,8 +21,28 @@ const server = new McpServer({
   version: "1.0.0",
 })
 
+// Last Graph error captured by makeGraphRequest, surfaced by handlers when response is null.
+// Stdio MCP transports drop stderr, so the human only sees what handlers return.
+let lastGraphError: string | null = null
+export const getLastGraphError = (): string | null => lastGraphError
+
+// Standard failure return for handlers when a Graph call returned null.
+// Appends the captured HTTP status/body so Claude can act on the real reason.
+function graphFail(msg: string) {
+  const detail = lastGraphError ? ` — ${lastGraphError}` : ""
+  return {
+    content: [
+      {
+        type: "text" as const,
+        text: `${msg}${detail}`,
+      },
+    ],
+  }
+}
+
 // Helper function for making Microsoft Graph API requests
 async function makeGraphRequest<T>(url: string, token: string, method = "GET", body?: any): Promise<T | null> {
+  lastGraphError = null
   const headers = {
     "User-Agent": USER_AGENT,
     Accept: "application/json",
@@ -69,6 +87,7 @@ async function makeGraphRequest<T>(url: string, token: string, method = "GET", b
     if (!response.ok) {
       const errorText = await response.text()
       console.error(`HTTP error! status: ${response.status}, body: ${errorText}`)
+      lastGraphError = `HTTP ${response.status}: ${errorText.substring(0, 500)}`
 
       // Check for the specific MailboxNotEnabledForRESTAPI error
       if (errorText.includes("MailboxNotEnabledForRESTAPI")) {
@@ -304,14 +323,7 @@ server.tool(
       const response = await makeGraphRequest<{ value: TaskList[] }>(`${MS_GRAPH_BASE}/me/todo/lists`, token)
 
       if (!response) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: "Failed to retrieve task lists",
-            },
-          ],
-        }
+        return graphFail("Failed to retrieve task lists")
       }
 
       const lists = response.value || []
@@ -395,14 +407,7 @@ server.tool(
       const response = await makeGraphRequest<{ value: TaskList[] }>(`${MS_GRAPH_BASE}/me/todo/lists`, token)
 
       if (!response) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: "Failed to retrieve task lists",
-            },
-          ],
-        }
+        return graphFail("Failed to retrieve task lists")
       }
 
       const lists = response.value || []
@@ -651,14 +656,7 @@ server.tool(
       const response = await makeGraphRequest<TaskList>(`${MS_GRAPH_BASE}/me/todo/lists`, token, "POST", requestBody)
 
       if (!response) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Failed to create task list: ${displayName}`,
-            },
-          ],
-        }
+        return graphFail(`Failed to create task list: ${displayName}`)
       }
 
       return {
@@ -717,14 +715,7 @@ server.tool(
       )
 
       if (!response) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Failed to update task list with ID: ${listId}`,
-            },
-          ],
-        }
+        return graphFail(`Failed to update task list with ID: ${listId}`)
       }
 
       return {
@@ -842,14 +833,7 @@ server.tool(
       const response = await makeGraphRequest<{ value: Task[]; "@odata.count"?: number }>(url, token)
 
       if (!response) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Failed to retrieve tasks for list: ${listId}`,
-            },
-          ],
-        }
+        return graphFail(`Failed to retrieve tasks for list: ${listId}`)
       }
 
       const tasks = response.value || []
@@ -1029,14 +1013,7 @@ server.tool(
       )
 
       if (!response) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Failed to create task in list: ${listId}`,
-            },
-          ],
-        }
+        return graphFail(`Failed to create task in list: ${listId}`)
       }
 
       return {
@@ -1192,14 +1169,7 @@ server.tool(
       )
 
       if (!response) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Failed to update task with ID: ${taskId} in list: ${listId}`,
-            },
-          ],
-        }
+        return graphFail(`Failed to update task with ID: ${taskId} in list: ${listId}`)
       }
 
       return {
@@ -1309,14 +1279,7 @@ server.tool(
       )
 
       if (!response) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Failed to retrieve checklist items for task: ${taskId}`,
-            },
-          ],
-        }
+        return graphFail(`Failed to retrieve checklist items for task: ${taskId}`)
       }
 
       const items = response.value || []
@@ -1406,14 +1369,7 @@ server.tool(
       )
 
       if (!response) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Failed to create checklist item for task: ${taskId}`,
-            },
-          ],
-        }
+        return graphFail(`Failed to create checklist item for task: ${taskId}`)
       }
 
       return {
@@ -1493,14 +1449,7 @@ server.tool(
       )
 
       if (!response) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Failed to update checklist item with ID: ${checklistItemId}`,
-            },
-          ],
-        }
+        return graphFail(`Failed to update checklist item with ID: ${checklistItemId}`)
       }
 
       const statusText = response.isChecked ? "Checked" : "Not checked"
@@ -1620,14 +1569,7 @@ server.tool(
       )
 
       if (!tasksResponse || !tasksResponse.value) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: "Failed to retrieve tasks from source list",
-            },
-          ],
-        }
+        return graphFail("Failed to retrieve tasks from source list")
       }
 
       // Filter tasks older than cutoff
