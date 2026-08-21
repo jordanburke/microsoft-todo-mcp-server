@@ -16,12 +16,24 @@ console.error("Current working directory:", process.cwd())
 // Microsoft Graph API endpoints
 const MS_GRAPH_BASE = "https://graph.microsoft.com/v1.0"
 const USER_AGENT = "microsoft-todo-mcp-server/1.0"
+const toolRegistrations: Array<(server: McpServer) => void> = []
 
-// Create server instance
-const server = new McpServer({
-  name: "mstodo",
-  version: "1.0.0",
-})
+// Keep tool definitions in one place while allowing each transport/request to
+// receive an independent McpServer instance.
+const server = {
+  tool: (...args: unknown[]) => {
+    toolRegistrations.push((instance) => Reflect.apply(instance.tool, instance, args))
+  },
+} as unknown as McpServer
+
+export function createTodoServer(): McpServer {
+  const instance = new McpServer({
+    name: "mstodo",
+    version: "1.1.3",
+  })
+  for (const register of toolRegistrations) register(instance)
+  return instance
+}
 
 // Helper function for making Microsoft Graph API requests
 async function makeGraphRequest<T>(url: string, token: string, method = "GET", body?: any): Promise<T | null> {
@@ -280,6 +292,19 @@ interface ChecklistItem {
   displayName: string
   isChecked: boolean
   createdDateTime?: string
+}
+
+const unsupportedTaskSelectFields = new Set(["title", "bodyLastModifiedDateTime"])
+
+export function normalizeTaskSelect(select?: string): string | undefined {
+  if (!select) return undefined
+
+  const fields = select
+    .split(",")
+    .map((field) => field.trim())
+    .filter((field) => field && !unsupportedTaskSelectFields.has(field))
+
+  return fields.length > 0 ? [...new Set(fields)].join(",") : undefined
 }
 
 // Register tools
@@ -827,7 +852,8 @@ server.tool(
       const queryParams = new URLSearchParams()
 
       if (filter) queryParams.append("$filter", filter)
-      if (select) queryParams.append("$select", select)
+      const normalizedSelect = normalizeTaskSelect(select)
+      if (normalizedSelect) queryParams.append("$select", normalizedSelect)
       if (orderby) queryParams.append("$orderby", orderby)
       if (top !== undefined) queryParams.append("$top", top.toString())
       if (skip !== undefined) queryParams.append("$skip", skip.toString())
@@ -1910,6 +1936,7 @@ export async function startServer(config?: ServerConfig): Promise<void> {
     await isPersonalMicrosoftAccount()
 
     // Start the server
+    const server = createTodoServer()
     const transport = new StdioServerTransport()
     await server.connect(transport)
 

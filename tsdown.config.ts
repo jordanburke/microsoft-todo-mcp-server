@@ -11,6 +11,8 @@ export default defineConfig({
     "src/cli.ts",
     "src/create-mcp-config.ts",
     "src/auth-server.ts",
+    "src/http-server.ts",
+    "src/remote-auth.ts",
     "src/setup.ts",
     "src/token-manager.ts",
   ],

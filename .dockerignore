@@ -1,0 +1,9 @@
+.git
+.github
+.planning
+coverage
+dist
+node_modules
+*.log
+.env*
+tokens.json
