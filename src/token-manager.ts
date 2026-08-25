@@ -35,6 +35,12 @@ export class TokenManager {
     console.error(`Token file path: ${this.tokenFilePath}`)
   }
 
+  // Override the token file path (e.g., via MSTODO_TOKEN_FILE in the CLI)
+  setTokenFilePath(path: string): void {
+    this.tokenFilePath = path
+    console.error(`Token file path overridden: ${this.tokenFilePath}`)
+  }
+
   // Try to get tokens from multiple sources
   async getTokens(): Promise<TokenData | null> {
     // 1. Check environment variables first (for backward compatibility)

@@ -104,6 +104,31 @@ but API access is restricted for personal accounts.
   }
 }
 
+// Helper that follows @odata.nextLink to collect all pages of a paged Graph response
+export async function makeGraphRequestAll<T extends { value: any[]; "@odata.nextLink"?: string }>(
+  url: string,
+  token: string,
+  maxPages = 20,
+): Promise<T | null> {
+  const firstPage = await makeGraphRequest<T>(url, token)
+  if (!firstPage) return null
+
+  const items = [...(firstPage.value || [])]
+  let nextLink = firstPage["@odata.nextLink"]
+  let pages = 1
+
+  while (nextLink && pages < maxPages) {
+    console.error(`Following @odata.nextLink (page ${pages + 1})`)
+    const nextPage = await makeGraphRequest<T>(nextLink, token)
+    if (!nextPage) break
+    items.push(...(nextPage.value || []))
+    nextLink = nextPage["@odata.nextLink"]
+    pages++
+  }
+
+  return { ...firstPage, value: items, "@odata.nextLink": nextLink }
+}
+
 // Authentication helper using delegated flow with token manager
 async function getAccessToken(): Promise<string | null> {
   try {
@@ -808,8 +833,15 @@ server.tool(
     top: z.number().optional().describe("Maximum number of tasks to retrieve"),
     skip: z.number().optional().describe("Number of tasks to skip"),
     count: z.boolean().optional().describe("Whether to include a count of tasks"),
+    all: z
+      .boolean()
+      .optional()
+      .default(false)
+      .describe(
+        "Fetch all pages by following @odata.nextLink. Recommended when no explicit $top/$skip is given, so large lists are not truncated",
+      ),
   },
-  async ({ listId, filter, select, orderby, top, skip, count }) => {
+  async ({ listId, filter, select, orderby, top, skip, count, all }) => {
     try {
       const token = await getAccessToken()
       if (!token) {
@@ -839,7 +871,15 @@ server.tool(
 
       console.error(`Making request to: ${url}`)
 
-      const response = await makeGraphRequest<{ value: Task[]; "@odata.count"?: number }>(url, token)
+      type TasksResponse = {
+        value: Task[]
+        "@odata.count"?: number
+        "@odata.nextLink"?: string
+      }
+
+      const response = all
+        ? await makeGraphRequestAll<TasksResponse>(url, token)
+        : await makeGraphRequest<TasksResponse>(url, token)
 
       if (!response) {
         return {
@@ -907,6 +947,11 @@ server.tool(
       let countInfo = ""
       if (count && response["@odata.count"] !== undefined) {
         countInfo = `Total count: ${response["@odata.count"]}\n\n`
+      }
+
+      // Warn if results were truncated by pagination
+      if (response["@odata.nextLink"] && !all) {
+        countInfo += `⚠️ Results may be truncated — more pages exist. Re-run with all=true to fetch every task.\n\n`
       }
 
       return {
@@ -1613,8 +1658,8 @@ server.tool(
       const cutoffDate = new Date()
       cutoffDate.setDate(cutoffDate.getDate() - olderThanDays)
 
-      // Get all completed tasks from source list
-      const tasksResponse = await makeGraphRequest<{ value: Task[] }>(
+      // Get all completed tasks from source list (following pagination)
+      const tasksResponse = await makeGraphRequestAll<{ value: Task[] }>(
         `${MS_GRAPH_BASE}/me/todo/lists/${sourceListId}/tasks?$filter=status eq 'completed'`,
         token,
       )
@@ -1723,188 +1768,202 @@ server.tool(
   },
 )
 
-// Test tool to explore Graph API for hidden properties
-server.tool(
-  "test-graph-api-exploration",
-  "Test various Graph API queries to discover hidden properties or endpoints for folder/group organization in Microsoft To Do.",
-  {
-    testType: z.enum(["odata-select", "odata-expand", "headers", "extensions", "all"]).describe("Type of test to run"),
-  },
-  async ({ testType }) => {
-    try {
-      const token = await getAccessToken()
-      if (!token) {
+// Diagnostic tool to explore Graph API for hidden properties.
+// Only registered when MSTODO_ENABLE_EXPLORATION=1 to keep it out of production tool listings.
+if (process.env.MSTODO_ENABLE_EXPLORATION === "1") {
+  server.tool(
+    "test-graph-api-exploration",
+    "Test various Graph API queries to discover hidden properties or endpoints for folder/group organization in Microsoft To Do.",
+    {
+      testType: z
+        .enum(["odata-select", "odata-expand", "headers", "extensions", "all"])
+        .describe("Type of test to run"),
+    },
+    async ({ testType }) => {
+      try {
+        const token = await getAccessToken()
+        if (!token) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: "Failed to authenticate with Microsoft API",
+              },
+            ],
+          }
+        }
+
+        let results = "🔍 Graph API Exploration Results\n" + "=".repeat(50) + "\n\n"
+
+        // Test 1: Try with $select=* to get all properties
+        if (testType === "odata-select" || testType === "all") {
+          results += "📊 Test 1: Using $select=* to retrieve all properties\n"
+          try {
+            const response = await makeGraphRequest<any>(`${MS_GRAPH_BASE}/me/todo/lists?$select=*`, token)
+            if (response && response.value && response.value.length > 0) {
+              const firstList = response.value[0]
+              const properties = Object.keys(firstList)
+              results += `Found ${properties.length} properties: ${properties.join(", ")}\n`
+
+              // Show full first list as example
+              results += "\nExample list object:\n"
+              results += JSON.stringify(firstList, null, 2).substring(0, 1000) + "...\n"
+            }
+          } catch (error) {
+            results += `Error: ${error}\n`
+          }
+          results += "\n"
+        }
+
+        // Test 2: Try various $expand options
+        if (testType === "odata-expand" || testType === "all") {
+          results += "📊 Test 2: Using $expand to retrieve related data\n"
+          const expandOptions = [
+            "extensions",
+            "singleValueExtendedProperties",
+            "multiValueExtendedProperties",
+            "openExtensions",
+            "parent",
+            "children",
+            "folder",
+            "parentFolder",
+            "group",
+            "category",
+          ]
+
+          for (const expand of expandOptions) {
+            try {
+              const response = await makeGraphRequest<any>(
+                `${MS_GRAPH_BASE}/me/todo/lists?$expand=${expand}&$top=1`,
+                token,
+              )
+              if (response && response.value) {
+                results += `✓ $expand=${expand}: Success - `
+                if (response.value.length > 0 && response.value[0][expand]) {
+                  results += `Found data!\n`
+                  results += JSON.stringify(response.value[0][expand], null, 2).substring(0, 500) + "...\n"
+                } else {
+                  results += `No additional data returned\n`
+                }
+              }
+            } catch (error: any) {
+              results += `✗ $expand=${expand}: ${error.message || "Failed"}\n`
+            }
+          }
+          results += "\n"
+        }
+
+        // Test 3: Check response headers for additional info
+        if (testType === "headers" || testType === "all") {
+          results += "📊 Test 3: Checking response headers\n"
+          try {
+            const response = await fetch(`${MS_GRAPH_BASE}/me/todo/lists`, {
+              headers: {
+                Authorization: `Bearer ${token}`,
+                Accept: "application/json",
+                Prefer: "return=representation",
+              },
+            })
+
+            results += "Response headers:\n"
+            response.headers.forEach((value, key) => {
+              results += `${key}: ${value}\n`
+            })
+          } catch (error) {
+            results += `Error: ${error}\n`
+          }
+          results += "\n"
+        }
+
+        // Test 4: Try extensions endpoint
+        if (testType === "extensions" || testType === "all") {
+          results += "📊 Test 4: Checking for extensions\n"
+          try {
+            const listsResponse = await makeGraphRequest<{ value: TaskList[] }>(
+              `${MS_GRAPH_BASE}/me/todo/lists?$top=1`,
+              token,
+            )
+
+            if (listsResponse && listsResponse.value && listsResponse.value.length > 0) {
+              const listId = listsResponse.value[0].id
+
+              // Try to get extensions
+              try {
+                const extResponse = await makeGraphRequest<any>(
+                  `${MS_GRAPH_BASE}/me/todo/lists/${listId}/extensions`,
+                  token,
+                )
+                results += `Extensions found: ${JSON.stringify(extResponse, null, 2)}\n`
+              } catch (error: any) {
+                results += `No extensions endpoint: ${error.message}\n`
+              }
+            }
+          } catch (error) {
+            results += `Error: ${error}\n`
+          }
+          results += "\n"
+        }
+
+        // Test 5: Check if there's a separate folders or groups endpoint
+        if (testType === "all") {
+          results += "📊 Test 5: Checking for folder/group endpoints\n"
+          const endpoints = [
+            "/me/todo/folders",
+            "/me/todo/groups",
+            "/me/todo/listGroups",
+            "/me/todo/listFolders",
+            "/me/todo/categories",
+          ]
+
+          for (const endpoint of endpoints) {
+            try {
+              const response = await makeGraphRequest<any>(`${MS_GRAPH_BASE}${endpoint}`, token)
+              results += `✓ ${endpoint}: Found! Response: ${JSON.stringify(response).substring(0, 200)}...\n`
+            } catch (error: any) {
+              results += `✗ ${endpoint}: Not found (${error.message || "Failed"})\n`
+            }
+          }
+        }
+
+        results += "\n" + "=".repeat(50) + "\n"
+        results += "Analysis complete. Check results above for any discovered properties or endpoints."
+
         return {
           content: [
             {
               type: "text",
-              text: "Failed to authenticate with Microsoft API",
+              text: results,
+            },
+          ],
+        }
+      } catch (error) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Error during Graph API exploration: ${error}`,
             },
           ],
         }
       }
-
-      let results = "🔍 Graph API Exploration Results\n" + "=".repeat(50) + "\n\n"
-
-      // Test 1: Try with $select=* to get all properties
-      if (testType === "odata-select" || testType === "all") {
-        results += "📊 Test 1: Using $select=* to retrieve all properties\n"
-        try {
-          const response = await makeGraphRequest<any>(`${MS_GRAPH_BASE}/me/todo/lists?$select=*`, token)
-          if (response && response.value && response.value.length > 0) {
-            const firstList = response.value[0]
-            const properties = Object.keys(firstList)
-            results += `Found ${properties.length} properties: ${properties.join(", ")}\n`
-
-            // Show full first list as example
-            results += "\nExample list object:\n"
-            results += JSON.stringify(firstList, null, 2).substring(0, 1000) + "...\n"
-          }
-        } catch (error) {
-          results += `Error: ${error}\n`
-        }
-        results += "\n"
-      }
-
-      // Test 2: Try various $expand options
-      if (testType === "odata-expand" || testType === "all") {
-        results += "📊 Test 2: Using $expand to retrieve related data\n"
-        const expandOptions = [
-          "extensions",
-          "singleValueExtendedProperties",
-          "multiValueExtendedProperties",
-          "openExtensions",
-          "parent",
-          "children",
-          "folder",
-          "parentFolder",
-          "group",
-          "category",
-        ]
-
-        for (const expand of expandOptions) {
-          try {
-            const response = await makeGraphRequest<any>(
-              `${MS_GRAPH_BASE}/me/todo/lists?$expand=${expand}&$top=1`,
-              token,
-            )
-            if (response && response.value) {
-              results += `✓ $expand=${expand}: Success - `
-              if (response.value.length > 0 && response.value[0][expand]) {
-                results += `Found data!\n`
-                results += JSON.stringify(response.value[0][expand], null, 2).substring(0, 500) + "...\n"
-              } else {
-                results += `No additional data returned\n`
-              }
-            }
-          } catch (error: any) {
-            results += `✗ $expand=${expand}: ${error.message || "Failed"}\n`
-          }
-        }
-        results += "\n"
-      }
-
-      // Test 3: Check response headers for additional info
-      if (testType === "headers" || testType === "all") {
-        results += "📊 Test 3: Checking response headers\n"
-        try {
-          const response = await fetch(`${MS_GRAPH_BASE}/me/todo/lists`, {
-            headers: {
-              Authorization: `Bearer ${token}`,
-              Accept: "application/json",
-              Prefer: "return=representation",
-            },
-          })
-
-          results += "Response headers:\n"
-          response.headers.forEach((value, key) => {
-            results += `${key}: ${value}\n`
-          })
-        } catch (error) {
-          results += `Error: ${error}\n`
-        }
-        results += "\n"
-      }
-
-      // Test 4: Try extensions endpoint
-      if (testType === "extensions" || testType === "all") {
-        results += "📊 Test 4: Checking for extensions\n"
-        try {
-          const listsResponse = await makeGraphRequest<{ value: TaskList[] }>(
-            `${MS_GRAPH_BASE}/me/todo/lists?$top=1`,
-            token,
-          )
-
-          if (listsResponse && listsResponse.value && listsResponse.value.length > 0) {
-            const listId = listsResponse.value[0].id
-
-            // Try to get extensions
-            try {
-              const extResponse = await makeGraphRequest<any>(
-                `${MS_GRAPH_BASE}/me/todo/lists/${listId}/extensions`,
-                token,
-              )
-              results += `Extensions found: ${JSON.stringify(extResponse, null, 2)}\n`
-            } catch (error: any) {
-              results += `No extensions endpoint: ${error.message}\n`
-            }
-          }
-        } catch (error) {
-          results += `Error: ${error}\n`
-        }
-        results += "\n"
-      }
-
-      // Test 5: Check if there's a separate folders or groups endpoint
-      if (testType === "all") {
-        results += "📊 Test 5: Checking for folder/group endpoints\n"
-        const endpoints = [
-          "/me/todo/folders",
-          "/me/todo/groups",
-          "/me/todo/listGroups",
-          "/me/todo/listFolders",
-          "/me/todo/categories",
-        ]
-
-        for (const endpoint of endpoints) {
-          try {
-            const response = await makeGraphRequest<any>(`${MS_GRAPH_BASE}${endpoint}`, token)
-            results += `✓ ${endpoint}: Found! Response: ${JSON.stringify(response).substring(0, 200)}...\n`
-          } catch (error: any) {
-            results += `✗ ${endpoint}: Not found (${error.message || "Failed"})\n`
-          }
-        }
-      }
-
-      results += "\n" + "=".repeat(50) + "\n"
-      results += "Analysis complete. Check results above for any discovered properties or endpoints."
-
-      return {
-        content: [
-          {
-            type: "text",
-            text: results,
-          },
-        ],
-      }
-    } catch (error) {
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Error during Graph API exploration: ${error}`,
-          },
-        ],
-      }
-    }
-  },
-)
+    },
+  )
+}
 
 // Main function to start the server
 export async function startServer(config?: ServerConfig): Promise<void> {
   try {
-    // Note: Token management is now handled by the TokenManager class
-    // Config options are kept for backward compatibility but not used
+    // Apply CLI-provided config so it actually takes effect:
+    // 1. Custom token file path
+    if (config?.tokenFilePath) {
+      tokenManager.setTokenFilePath(config.tokenFilePath)
+    }
+
+    // 2. Tokens passed directly (env vars take precedence, matching cli.ts behavior)
+    if (config?.accessToken && config?.refreshToken && !process.env.MS_TODO_ACCESS_TOKEN) {
+      process.env.MS_TODO_ACCESS_TOKEN = config.accessToken
+      process.env.MS_TODO_REFRESH_TOKEN = config.refreshToken
+    }
 
     // Check if using a personal Microsoft account and show warning if needed
     await isPersonalMicrosoftAccount()
