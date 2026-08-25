@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest"
-import { mkdtempSync, writeFileSync } from "fs"
+import { existsSync, mkdtempSync, writeFileSync } from "fs"
 import { tmpdir } from "os"
 import { join } from "path"
 import { TokenManager } from "../src/token-manager.js"
@@ -50,6 +50,22 @@ describe("TokenManager", () => {
 
     const tokens = await manager.getTokens()
     expect(tokens?.accessToken).toBe("from-env")
+  })
+
+  it("creates missing directories when overriding the token file path", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "mstodo-tokens-"))
+    const nestedFile = join(dir, "a", "b", "tokens.json")
+
+    const manager = new TokenManager()
+    manager.setTokenFilePath(nestedFile)
+    manager.saveTokens({
+      accessToken: "saved",
+      refreshToken: "saved",
+      expiresAt: Date.now() + 60 * 60 * 1000,
+    })
+
+    expect(existsSync(nestedFile)).toBe(true)
+    await expect(manager.getTokens()).resolves.toMatchObject({ accessToken: "saved" })
   })
 
   it("returns null when no token sources are available", async () => {

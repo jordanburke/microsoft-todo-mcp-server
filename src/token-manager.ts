@@ -1,7 +1,7 @@
 // src/token-manager.ts
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs"
 import { homedir } from "os"
-import { join } from "path"
+import { dirname, join } from "path"
 
 interface TokenData {
   accessToken: string
@@ -37,6 +37,10 @@ export class TokenManager {
 
   // Override the token file path (e.g., via MSTODO_TOKEN_FILE in the CLI)
   setTokenFilePath(path: string): void {
+    const dir = dirname(path)
+    if (!existsSync(dir)) {
+      mkdirSync(dir, { recursive: true })
+    }
     this.tokenFilePath = path
     console.error(`Token file path overridden: ${this.tokenFilePath}`)
   }

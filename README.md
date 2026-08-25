@@ -17,7 +17,7 @@ A Model Context Protocol (MCP) server that enables AI assistants like Claude and
 
 ## Prerequisites
 
-- Node.js 18 or higher (tested with Node.js 18.x, 20.x, and 22.x)
+- Node.js 22.13 or higher (tested with Node.js 22.x and 24.x; enforced by the `engines` field)
 - pnpm package manager
 - A Microsoft account (personal, work, or school)
 - Azure App Registration (see setup below)
@@ -208,7 +208,7 @@ pnpm run typecheck    # TypeScript type checking
 
 ## MCP Tools
 
-The server provides 16 tools for comprehensive Microsoft To Do management:
+The server registers 16 tools for comprehensive Microsoft To Do management. 15 are exposed by default; `test-graph-api-exploration` additionally requires `MSTODO_ENABLE_EXPLORATION=1`:
 
 ### Authentication
 

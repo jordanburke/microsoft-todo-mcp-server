@@ -1959,9 +1959,12 @@ export async function startServer(config?: ServerConfig): Promise<void> {
       tokenManager.setTokenFilePath(config.tokenFilePath)
     }
 
-    // 2. Tokens passed directly (env vars take precedence, matching cli.ts behavior)
-    if (config?.accessToken && config?.refreshToken && !process.env.MS_TODO_ACCESS_TOKEN) {
+    // 2. Tokens passed directly (env vars take precedence, matching cli.ts behavior).
+    // Applied per-variable so partially provided tokens are not silently dropped.
+    if (config?.accessToken && !process.env.MS_TODO_ACCESS_TOKEN) {
       process.env.MS_TODO_ACCESS_TOKEN = config.accessToken
+    }
+    if (config?.refreshToken && !process.env.MS_TODO_REFRESH_TOKEN) {
       process.env.MS_TODO_REFRESH_TOKEN = config.refreshToken
     }
 
