@@ -1,0 +1,12 @@
+services:
+  microsoft-todo-mcp:
+    build: .
+    restart: unless-stopped
+    env_file: ${MCP_ENV_FILE:-.env}
+    environment:
+      MCP_HOST: 0.0.0.0
+      MCP_PORT: 3001
+    ports:
+      - "127.0.0.1:${MCP_PORT:-3001}:3001"
+    volumes:
+      - ./data:/home/node/.config/microsoft-todo-mcp
