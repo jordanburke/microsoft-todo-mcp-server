@@ -54,6 +54,9 @@
     "tsdown": "^0.22.2"
   },
   "type": "module",
+  "engines": {
+    "node": ">=22.13"
+  },
   "bin": {
     "microsoft-todo-mcp-server": "./dist/cli.js",
     "mstodo": "./dist/cli.js",

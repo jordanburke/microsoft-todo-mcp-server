@@ -7,7 +7,7 @@ A Model Context Protocol (MCP) server that enables AI assistants like Claude and
 
 ## Features
 
-- **15 MCP Tools**: Complete task management functionality including lists, tasks, checklist items, and organization features
+- **16 MCP Tools**: Complete task management functionality including lists, tasks, checklist items, and organization features
 - **Seamless Authentication**: Automatic token refresh with zero manual intervention
 - **OAuth 2.0 Authentication**: Secure authentication with automatic token refresh
 - **Microsoft Graph API Integration**: Direct integration with Microsoft's official API
@@ -17,7 +17,7 @@ A Model Context Protocol (MCP) server that enables AI assistants like Claude and
 
 ## Prerequisites
 
-- Node.js 16 or higher (tested with Node.js 18.x, 20.x, and 22.x)
+- Node.js 22.13 or higher (tested with Node.js 22.x and 24.x; enforced by the `engines` field)
 - pnpm package manager
 - A Microsoft account (personal, work, or school)
 - Azure App Registration (see setup below)
@@ -199,6 +199,7 @@ pnpm run auth         # Start OAuth authentication server
 pnpm run create-config # Generate mcp.json from tokens.json
 
 # Code Quality
+pnpm test            # Run unit tests (vitest)
 pnpm run format       # Format code with Prettier
 pnpm run format:check # Check code formatting
 pnpm run lint         # Run linting checks
@@ -207,7 +208,7 @@ pnpm run typecheck    # TypeScript type checking
 
 ## MCP Tools
 
-The server provides 13 tools for comprehensive Microsoft To Do management:
+The server registers 16 tools for comprehensive Microsoft To Do management. 15 are exposed by default; `test-graph-api-exploration` additionally requires `MSTODO_ENABLE_EXPLORATION=1`:
 
 ### Authentication
 
@@ -216,6 +217,7 @@ The server provides 13 tools for comprehensive Microsoft To Do management:
 ### Task Lists (Top-level Containers)
 
 - **`get-task-lists`** - Retrieve all task lists with metadata (default, shared, etc.)
+- **`get-task-lists-organized`** - Retrieve task lists grouped by well-known lists and custom lists
 - **`create-task-list`** - Create a new task list
 - **`update-task-list`** - Rename an existing task list
 - **`delete-task-list`** - Delete a task list and all its contents
@@ -224,6 +226,7 @@ The server provides 13 tools for comprehensive Microsoft To Do management:
 
 - **`get-tasks`** - Get tasks from a list with filtering, sorting, and pagination
   - Supports OData query parameters: `$filter`, `$select`, `$orderby`, `$top`, `$skip`, `$count`
+  - Set `all: true` to follow `@odata.nextLink` and fetch every page (avoids truncation on large lists)
 - **`create-task`** - Create a new task with full property support
   - Title, description, due date, start date, importance, reminders, status, categories
 - **`update-task`** - Update any task properties
@@ -235,6 +238,11 @@ The server provides 13 tools for comprehensive Microsoft To Do management:
 - **`create-checklist-item`** - Add a new subtask to a task
 - **`update-checklist-item`** - Update subtask text or completion status
 - **`delete-checklist-item`** - Remove a specific subtask
+
+### Maintenance & Diagnostics
+
+- **`archive-completed-tasks`** - Move completed tasks older than N days to an archive list (supports dry-run)
+- **`test-graph-api-exploration`** - Diagnostic tool that probes Graph API for hidden properties or endpoints (only registered when `MSTODO_ENABLE_EXPLORATION=1`)
 
 ## Architecture
 
