@@ -820,7 +820,11 @@ server.tool(
       const queryParams = new URLSearchParams()
 
       if (filter) queryParams.append("$filter", filter)
-      if (select) queryParams.append("$select", select)
+      // Deliberately not forwarded as $select: /me/todo/lists/{id}/tasks answers any
+      // $select with HTTP 400 (reproduced with and without $filter and $top, for every
+      // field combination tried, against a personal account). Forwarding it turned a
+      // valid call into a hard failure, so the parameter is applied as a client-side
+      // projection below instead — the caller still gets the narrower result it asked for.
       if (orderby) queryParams.append("$orderby", orderby)
       if (top !== undefined) queryParams.append("$top", top.toString())
       if (skip !== undefined) queryParams.append("$skip", skip.toString())
@@ -857,34 +861,46 @@ server.tool(
         }
       }
 
+      // Client-side stand-in for $select (see above). No list, or a list naming a field
+      // that is not optional here, means "everything" — the pre-existing behaviour.
+      const wanted = select
+        ? new Set(
+            select
+              .split(",")
+              .map((f) => f.trim())
+              .filter(Boolean),
+          )
+        : null
+      const want = (field: string) => !wanted || wanted.has(field)
+
       // Format the tasks based on available properties
       const formattedTasks = tasks.map((task) => {
         // Default format
         let taskInfo = `ID: ${task.id}\nTitle: ${task.title}`
 
         // Add status if available
-        if (task.status) {
+        if (want("status") && task.status) {
           const status = task.status === "completed" ? "✓" : "○"
           taskInfo = `${status} ${taskInfo}`
         }
 
         // Add due date if available
-        if (task.dueDateTime) {
+        if (want("dueDateTime") && task.dueDateTime) {
           taskInfo += `\nDue: ${new Date(task.dueDateTime.dateTime).toLocaleDateString()}`
         }
 
         // Add importance if available
-        if (task.importance) {
+        if (want("importance") && task.importance) {
           taskInfo += `\nImportance: ${task.importance}`
         }
 
         // Add categories if available
-        if (task.categories && task.categories.length > 0) {
+        if (want("categories") && task.categories && task.categories.length > 0) {
           taskInfo += `\nCategories: ${task.categories.join(", ")}`
         }
 
         // Add body content if available and not empty
-        if (task.body && task.body.content && task.body.content.trim() !== "") {
+        if (want("body") && task.body && task.body.content && task.body.content.trim() !== "") {
           const previewLength = 50
           const contentPreview =
             task.body.content.length > previewLength
