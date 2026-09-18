@@ -119,6 +119,10 @@ export MS_TODO_ACCESS_TOKEN=your_access_token
 export MS_TODO_REFRESH_TOKEN=your_refresh_token
 ```
 
+> **Personal Microsoft accounts (`TENANT_ID=consumers`):** token refresh requests fully-qualified Microsoft Graph scopes (e.g. `https://graph.microsoft.com/Tasks.ReadWrite`). Bare scope names make Graph reject the refreshed token with `IDX14100` ("JWT is not well formed") — the failure mode where the server works on day one and returns 401s afterwards.
+>
+> **Env-token setups refresh on startup.** With `MS_TODO_ACCESS_TOKEN` / `MS_TODO_REFRESH_TOKEN` set, the seed access token is refreshed on first use (and cached until it expires) rather than trusted for a fixed hour. That refresh needs `CLIENT_ID`, `CLIENT_SECRET`, and `TENANT_ID` to be set as well; without them the server falls back to using the seed token as-is.
+
 ## Usage
 
 ### Complete Setup Workflow
