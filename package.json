@@ -1,6 +1,6 @@
 {
   "name": "microsoft-todo-mcp-server",
-  "version": "1.1.3",
+  "version": "1.2.0",
   "description": "Microsoft Todo MCP service for Claude and Cursor. Fork of @jhirono/todomcp",
   "main": "dist/todo-index.js",
   "dependencies": {
@@ -25,9 +25,9 @@
     "lint": "ts-builds lint",
     "lint:check": "ts-builds lint:check",
     "typecheck": "ts-builds typecheck",
-    "test": "ts-builds test",
-    "test:watch": "ts-builds test:watch",
-    "prepublishOnly": "pnpm validate",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "prepublishOnly": "pnpm typecheck && pnpm test && pnpm run build",
     "postinstall": "echo 'Run: npx microsoft-todo-mcp-server setup' to configure"
   },
   "repository": {
@@ -51,7 +51,8 @@
     "@types/express": "^5.0.6",
     "@types/node": "^22.19.21",
     "ts-builds": "^3.2.0",
-    "tsdown": "^0.22.2"
+    "tsdown": "^0.22.2",
+    "vitest": "^5.0.2"
   },
   "type": "module",
   "bin": {
