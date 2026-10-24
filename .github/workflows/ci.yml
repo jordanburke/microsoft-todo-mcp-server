@@ -32,6 +32,11 @@ jobs:
       - name: Validate (format, lint, typecheck, test, build)
         run: pnpm validate
 
+      # server.json carries the version into the MCP Registry. prepublishOnly checks it
+      # too, but that fires on the release, where a failure has already cut a tag.
+      - name: Check server.json is in step with package.json
+        run: node scripts/sync-server-json.mjs --check
+
       - name: Check dist files exist
         run: |
           ls -la dist/

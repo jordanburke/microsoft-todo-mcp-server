@@ -4,7 +4,9 @@
 # npm release path, so a submission can be re-run on demand (workflow_dispatch)
 # without cutting a version. After a release it waits for npm to serve the
 # version first — the registry verifies ownership by reading `mcpName` out of
-# the published package.json, so it has to be live before we publish.
+# the published package.json, so it has to be live before we publish. Ten
+# minutes, because npm can take several minutes to serve a version its publish
+# job has already accepted.
 name: Publish to MCP Registry
 
 on:
@@ -23,19 +25,22 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Check server.json is in step with package.json
+        run: node scripts/sync-server-json.mjs --check
+
       - name: Wait for npm to serve the version
         run: |
           VERSION=$(node -p "require('./package.json').version")
           echo "Waiting for microsoft-todo-mcp-server@${VERSION} on npm..."
-          for i in $(seq 1 18); do
+          for i in $(seq 1 30); do
             if npm view "microsoft-todo-mcp-server@${VERSION}" version > /dev/null 2>&1; then
               echo "Version ${VERSION} is live on npm"
               exit 0
             fi
-            echo "Attempt ${i}/18 — not yet, waiting 10s..."
-            sleep 10
+            echo "Attempt ${i}/30 — not yet, waiting 20s..."
+            sleep 20
           done
-          echo "Version ${VERSION} not found on npm after 3 minutes"
+          echo "Version ${VERSION} not found on npm after 10 minutes"
           exit 1
 
       - name: Install MCP Publisher
