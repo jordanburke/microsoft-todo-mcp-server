@@ -36,3 +36,5 @@ tokens.json
 *.sw?
 .DS_Store
 
+# MCP Registry publisher binary, downloaded by CI
+mcp-publisher

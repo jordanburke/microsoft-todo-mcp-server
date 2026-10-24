@@ -1,0 +1,53 @@
+# Publishes server.json to the MCP Registry.
+#
+# Separate from publish.yml on purpose: the registry entry is not tied to the
+# npm release path, so a submission can be re-run on demand (workflow_dispatch)
+# without cutting a version. After a release it waits for npm to serve the
+# version first — the registry verifies ownership by reading `mcpName` out of
+# the published package.json, so it has to be live before we publish.
+name: Publish to MCP Registry
+
+on:
+  workflow_dispatch:
+  release:
+    types: [published]
+
+jobs:
+  publish-registry:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # OIDC — proves this repo belongs to the namespace owner
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Wait for npm to serve the version
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          echo "Waiting for microsoft-todo-mcp-server@${VERSION} on npm..."
+          for i in $(seq 1 18); do
+            if npm view "microsoft-todo-mcp-server@${VERSION}" version > /dev/null 2>&1; then
+              echo "Version ${VERSION} is live on npm"
+              exit 0
+            fi
+            echo "Attempt ${i}/18 — not yet, waiting 10s..."
+            sleep 10
+          done
+          echo "Version ${VERSION} not found on npm after 3 minutes"
+          exit 1
+
+      - name: Install MCP Publisher
+        run: |
+          curl -L "https://github.com/modelcontextprotocol/registry/releases/download/v1.7.9/mcp-publisher_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz" | tar xz mcp-publisher
+          chmod +x ./mcp-publisher
+
+      - name: Validate server.json
+        run: ./mcp-publisher validate
+
+      - name: Login to MCP Registry
+        run: ./mcp-publisher login github-oidc
+
+      - name: Publish to MCP Registry
+        run: ./mcp-publisher publish

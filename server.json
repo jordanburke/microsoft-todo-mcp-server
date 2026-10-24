@@ -1,0 +1,71 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.jordanburke/microsoft-todo-mcp-server",
+  "description": "Microsoft To Do via Graph \u2014 task lists, tasks, checklist items and reminders.",
+  "repository": {
+    "url": "https://github.com/jordanburke/microsoft-todo-mcp-server",
+    "source": "github"
+  },
+  "version": "1.1.3",
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "microsoft-todo-mcp-server",
+      "version": "1.1.3",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "MS_TODO_ACCESS_TOKEN",
+          "description": "Microsoft Graph access token. Set alongside MS_TODO_REFRESH_TOKEN to skip the token file; `mstodo-config` emits both.",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": true
+        },
+        {
+          "name": "MS_TODO_REFRESH_TOKEN",
+          "description": "Microsoft Graph refresh token, used to renew the access token in place",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": true
+        },
+        {
+          "name": "MSTODO_TOKEN_FILE",
+          "description": "Path to the tokens.json written by `mstodo-setup` (default: tokens.json in the working directory)",
+          "isRequired": false,
+          "format": "filepath",
+          "isSecret": false
+        },
+        {
+          "name": "CLIENT_ID",
+          "description": "Azure AD application (client) ID \u2014 used by `mstodo-setup` to run the auth flow",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": false
+        },
+        {
+          "name": "CLIENT_SECRET",
+          "description": "Azure AD client secret for the auth flow",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": true
+        },
+        {
+          "name": "TENANT_ID",
+          "description": "Azure AD tenant: 'organizations' (default), 'consumers', 'common', or a tenant GUID",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": false
+        },
+        {
+          "name": "REDIRECT_URI",
+          "description": "OAuth redirect URI registered on the Azure AD app (default http://localhost:3000/callback)",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": false
+        }
+      ]
+    }
+  ]
+}
