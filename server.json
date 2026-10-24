@@ -18,49 +18,35 @@
       "environmentVariables": [
         {
           "name": "MS_TODO_ACCESS_TOKEN",
-          "description": "Microsoft Graph access token. Set alongside MS_TODO_REFRESH_TOKEN to skip the token file; `mstodo-config` emits both.",
+          "description": "Microsoft Graph access token. Must be set together with MS_TODO_REFRESH_TOKEN; `mstodo-config` emits both.",
           "isRequired": false,
           "format": "string",
           "isSecret": true
         },
         {
           "name": "MS_TODO_REFRESH_TOKEN",
-          "description": "Microsoft Graph refresh token, used to renew the access token in place",
+          "description": "Refresh token. Required alongside the access token, but note the env-token path does not renew: once the access token expires the server returns 401 until it is replaced.",
           "isRequired": false,
           "format": "string",
           "isSecret": true
         },
         {
-          "name": "MSTODO_TOKEN_FILE",
-          "description": "Path to the tokens.json written by `mstodo-setup` (default: tokens.json in the working directory)",
-          "isRequired": false,
-          "format": "filepath",
-          "isSecret": false
-        },
-        {
           "name": "CLIENT_ID",
-          "description": "Azure AD application (client) ID — used by `mstodo-setup` to run the auth flow",
+          "description": "Azure AD application (client) ID. The server reads it to refresh tokens when the stored token file carries no credentials; `mstodo-setup` also uses it.",
           "isRequired": false,
           "format": "string",
           "isSecret": false
         },
         {
           "name": "CLIENT_SECRET",
-          "description": "Azure AD client secret for the auth flow",
+          "description": "Azure AD client secret, used for the same token refresh and by `mstodo-setup`.",
           "isRequired": false,
           "format": "string",
           "isSecret": true
         },
         {
           "name": "TENANT_ID",
-          "description": "Azure AD tenant: 'organizations' (default), 'consumers', 'common', or a tenant GUID",
-          "isRequired": false,
-          "format": "string",
-          "isSecret": false
-        },
-        {
-          "name": "REDIRECT_URI",
-          "description": "OAuth redirect URI registered on the Azure AD app (default http://localhost:3000/callback)",
+          "description": "Azure AD tenant: 'organizations' (the default), 'consumers', 'common', or a tenant GUID.",
           "isRequired": false,
           "format": "string",
           "isSecret": false
