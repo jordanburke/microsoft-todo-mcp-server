@@ -18,10 +18,16 @@ jobs:
       - name: Install pnpm
         uses: pnpm/action-setup@v4
 
+      # Exact patch, not a major. The npm bundled with the Node that setup-node
+      # happens to resolve decides whether OIDC works: 24.19.0 ships npm 11.17.0,
+      # which abandons the token exchange and falls back to interactive browser
+      # login (E401 "Failed to generate Web Auth URLs"); 24.20.0 ships npm 11.19.0,
+      # which works. A release job cannot be safely retried, so its credential must
+      # not depend on which runner picks it up.
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 24.x
+          node-version-file: ".nvmrc"
           cache: "pnpm"
           registry-url: "https://registry.npmjs.org"
 
@@ -31,7 +37,8 @@ jobs:
       - name: Validate (format, lint, typecheck, test, build)
         run: pnpm validate
 
+      # No NODE_AUTH_TOKEN: npm trusted publishing exchanges the job's OIDC token
+      # for a short-lived credential, so there is no static secret to rotate. The
+      # trust is configured on npmjs.com against this repo and this workflow file.
       - name: Publish to npm
-        run: pnpm publish --access public --no-git-checks
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: pnpm publish --access public --no-git-checks --provenance

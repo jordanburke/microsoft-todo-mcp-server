@@ -35,7 +35,7 @@ pnpm start           # Run MCP server directly
 
 Built with **ts-builds 3.2.0** (tsdown) on **pnpm 11**. Non-obvious, load-bearing constraints:
 
-- **Node >= 22.13 required.** pnpm 11 crashes on Node 20 (`ERR_UNKNOWN_BUILTIN_MODULE`). CI runs Node 22.x/24.x; the publish workflow uses Node 24 (`.nvmrc`).
+- **Node >= 22.13 required.** pnpm 11 crashes on Node 20 (`ERR_UNKNOWN_BUILTIN_MODULE`). CI runs Node 22.x/24.x; the publish workflow reads `.nvmrc`, which is pinned to the exact patch `24.21.0` because the bundled npm decides whether OIDC trusted publishing works.
 - **Keep `globals` in `publicHoistPattern`** (`pnpm-workspace.yaml`). `eslint.config.js` imports `globals`, which `*eslint*` does not match. Without the explicit hoist line, resolution falls back to pnpm's incidental `.pnpm` virtual-store hoist — passes locally but **fails CI** with `Cannot find package 'globals'`. It is load-bearing, not redundant; ts-builds 3.2.0 only adds it for _new_ `init`s, it does not retro-fit this file.
 - **First-party release-age excludes are globs, not pins.** `minimumReleaseAgeExclude` is `*functype*` + `ts-builds`. `pnpm add` auto-adds per-version pins for first-party packages within the 24h cooldown — collapse them back to the glob (pins re-trip on every release).
 - **`allowBuilds: esbuild: false`** is required under pnpm 11 `strictDepBuilds` (esbuild's binary ships via `@esbuild/<platform>` optional deps; build script not needed).
