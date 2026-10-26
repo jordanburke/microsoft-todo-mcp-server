@@ -1,0 +1,57 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.jordanburke/microsoft-todo-mcp-server",
+  "description": "Microsoft To Do via Graph — task lists, tasks, checklist items and reminders.",
+  "repository": {
+    "url": "https://github.com/jordanburke/microsoft-todo-mcp-server",
+    "source": "github"
+  },
+  "version": "1.1.3",
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "microsoft-todo-mcp-server",
+      "version": "1.1.3",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "MS_TODO_ACCESS_TOKEN",
+          "description": "Microsoft Graph access token. Must be set together with MS_TODO_REFRESH_TOKEN; `mstodo-config` emits both.",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": true
+        },
+        {
+          "name": "MS_TODO_REFRESH_TOKEN",
+          "description": "Refresh token. Required alongside the access token, but note the env-token path does not renew: once the access token expires the server returns 401 until it is replaced.",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": true
+        },
+        {
+          "name": "CLIENT_ID",
+          "description": "Azure AD application (client) ID. The server reads it to refresh tokens when the stored token file carries no credentials; `mstodo-setup` also uses it.",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": false
+        },
+        {
+          "name": "CLIENT_SECRET",
+          "description": "Azure AD client secret, used for the same token refresh and by `mstodo-setup`.",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": true
+        },
+        {
+          "name": "TENANT_ID",
+          "description": "Azure AD tenant: 'organizations' (the default), 'consumers', 'common', or a tenant GUID.",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": false
+        }
+      ]
+    }
+  ]
+}

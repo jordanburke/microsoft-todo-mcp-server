@@ -1,0 +1,62 @@
+# Publishes server.json to the MCP Registry.
+#
+# Separate from publish.yml on purpose, so a failed submission can be retried
+# with workflow_dispatch without re-cutting the release. It is a retry, not a
+# re-publish: the registry rejects a repeat of the same name@version. After a release it waits for npm to serve the
+# version first — the registry verifies ownership by reading `mcpName` out of
+# the published package.json, so the version has to be live before we publish.
+# The wait HEADs the tarball, not the metadata: npm writes a version's metadata
+# before its tarball, so `npm view` answers 200 for a version whose tarball
+# still 404s — that is how prosemeter 0.5.0 shipped an uninstallable release.
+# Ten minutes, because npm can take several minutes to serve a version its
+# publish job has already accepted.
+name: Publish to MCP Registry
+
+on:
+  workflow_dispatch:
+  release:
+    types: [published]
+
+jobs:
+  publish-registry:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # OIDC — proves this repo belongs to the namespace owner
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Check server.json is in step with package.json
+        run: node scripts/sync-server-json.mjs --check
+
+      - name: Install MCP Publisher
+        run: |
+          curl -L "https://github.com/modelcontextprotocol/registry/releases/download/v1.7.9/mcp-publisher_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz" | tar xz mcp-publisher
+          chmod +x ./mcp-publisher
+
+      - name: Validate server.json
+        run: ./mcp-publisher validate
+
+      - name: Wait for npm to serve the version
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          PKG=microsoft-todo-mcp-server
+          echo "Waiting for ${PKG}@${VERSION} tarball on npm..."
+          for i in $(seq 1 30); do
+            if curl -sfI "https://registry.npmjs.org/${PKG}/-/${PKG}-${VERSION}.tgz" > /dev/null; then
+              echo "Tarball for ${VERSION} is live on npm"
+              exit 0
+            fi
+            echo "Attempt ${i}/30 — not yet, waiting 20s..."
+            sleep 20
+          done
+          echo "No tarball for ${VERSION} on npm after 10 minutes"
+          exit 1
+
+      - name: Login to MCP Registry
+        run: ./mcp-publisher login github-oidc
+
+      - name: Publish to MCP Registry
+        run: ./mcp-publisher publish
