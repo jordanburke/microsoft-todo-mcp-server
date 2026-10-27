@@ -1,7 +1,7 @@
 // src/token-manager.ts
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs"
 import { homedir } from "os"
-import { join } from "path"
+import { dirname, join, resolve } from "path"
 
 interface TokenData {
   accessToken: string
@@ -15,45 +15,94 @@ interface StoredTokenData extends TokenData {
   tenantId?: string
 }
 
+// Work and school accounts get a JWT access token, so the real expiry is in its `exp`
+// claim and does not have to be guessed. Personal accounts get an opaque token, where
+// the one-hour assumption is all there is — but the caller stamps it once instead of
+// on every call, which is what used to keep the refresh branch out of reach.
+const expiryFromAccessToken = (accessToken: string): number => {
+  const FALLBACK_LIFETIME_MS = 3600 * 1000
+  const REFRESH_BUFFER_MS = 5 * 60 * 1000
+
+  try {
+    const payload = accessToken.split(".")[1]
+    if (!payload) return Date.now() + FALLBACK_LIFETIME_MS
+
+    const { exp } = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"))
+    if (typeof exp !== "number") return Date.now() + FALLBACK_LIFETIME_MS
+
+    return exp * 1000 - REFRESH_BUFFER_MS
+  } catch {
+    // An opaque token is not an error — fall back to the old assumption, but stamp it
+    // once (see readEnvTokens) rather than on every call.
+    return Date.now() + FALLBACK_LIFETIME_MS
+  }
+}
+
 export class TokenManager {
   private tokenFilePath: string
   private currentTokens: StoredTokenData | null = null
+  private envTokens: TokenData | null = null
 
   constructor() {
-    // Store tokens in a consistent location across platforms
+    this.tokenFilePath = TokenManager.resolveTokenFilePath()
+    mkdirSync(dirname(this.tokenFilePath), { recursive: true })
+    console.error(`Token file path: ${this.tokenFilePath}`)
+  }
+
+  private static resolveTokenFilePath(): string {
+    // MSTODO_TOKEN_FILE is documented in the README as the way to relocate the token
+    // store. It used to be read in cli.ts and handed to startServer, which discarded
+    // it, so setting it moved nothing and every tool call failed to authenticate.
+    const override = process.env.MSTODO_TOKEN_FILE
+    if (override) return resolve(override)
+
+    // Otherwise a consistent location across platforms
     const configDir =
       process.platform === "win32"
         ? join(process.env.APPDATA || join(homedir(), "AppData", "Roaming"), "microsoft-todo-mcp")
         : join(homedir(), ".config", "microsoft-todo-mcp")
 
-    // Create directory if it doesn't exist
-    if (!existsSync(configDir)) {
-      mkdirSync(configDir, { recursive: true })
+    return join(configDir, "tokens.json")
+  }
+
+  // The environment pair is a bootstrap credential, not a live one: nothing rewrites
+  // those variables when a token is renewed. Stamp its deadline once, when the value
+  // is first seen, so the deadline stops moving with the clock.
+  private readEnvTokens(): TokenData | null {
+    const accessToken = process.env.MS_TODO_ACCESS_TOKEN
+    const refreshToken = process.env.MS_TODO_REFRESH_TOKEN
+    if (!accessToken || !refreshToken) return null
+
+    if (!this.envTokens || this.envTokens.accessToken !== accessToken) {
+      this.envTokens = { accessToken, refreshToken, expiresAt: expiryFromAccessToken(accessToken) }
     }
 
-    this.tokenFilePath = join(configDir, "tokens.json")
-    console.error(`Token file path: ${this.tokenFilePath}`)
+    return this.envTokens
   }
 
   // Try to get tokens from multiple sources
   async getTokens(): Promise<TokenData | null> {
     // 1. Check environment variables first (for backward compatibility)
-    if (process.env.MS_TODO_ACCESS_TOKEN && process.env.MS_TODO_REFRESH_TOKEN) {
-      const envTokens: TokenData = {
-        accessToken: process.env.MS_TODO_ACCESS_TOKEN,
-        refreshToken: process.env.MS_TODO_REFRESH_TOKEN,
-        expiresAt: Date.now() + 3600 * 1000, // Assume 1 hour if not specified
+    const envTokens = this.readEnvTokens()
+    if (envTokens) {
+      // Anything renewed in this process supersedes the environment pair. Nothing
+      // rewrites those variables, so the original values stay frozen at whatever they
+      // were at launch; preferring them would serve a stale access token forever and
+      // would re-send a refresh token the identity provider has already rotated away.
+      const live = this.currentTokens ?? envTokens
+
+      if (Date.now() < live.expiresAt) {
+        return live
       }
 
-      // Check if expired
-      if (Date.now() > envTokens.expiresAt) {
-        // Try to refresh
-        const refreshed = await this.refreshToken(envTokens.refreshToken)
-        if (refreshed) {
-          return refreshed
-        }
+      const refreshed = await this.refreshToken(live.refreshToken)
+      if (refreshed) {
+        return refreshed
       }
-      return envTokens
+
+      // Hand back the expired token rather than nothing: the caller's 401 says more
+      // about what went wrong than a bare "not authenticated".
+      return live
     }
 
     // 2. Check stored token file

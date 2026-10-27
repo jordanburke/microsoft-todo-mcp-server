@@ -125,13 +125,6 @@ async function getAccessToken(): Promise<string | null> {
   }
 }
 
-// Server configuration type
-interface ServerConfig {
-  accessToken?: string
-  refreshToken?: string
-  tokenFilePath?: string
-}
-
 // Function to check if the account is a personal Microsoft account
 async function isPersonalMicrosoftAccount(): Promise<boolean> {
   try {
@@ -1901,11 +1894,8 @@ server.tool(
 )
 
 // Main function to start the server
-export async function startServer(config?: ServerConfig): Promise<void> {
+export async function startServer(): Promise<void> {
   try {
-    // Note: Token management is now handled by the TokenManager class
-    // Config options are kept for backward compatibility but not used
-
     // Check if using a personal Microsoft account and show warning if needed
     await isPersonalMicrosoftAccount()
 
