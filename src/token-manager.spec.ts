@@ -19,7 +19,7 @@ let originalCwd: string
 beforeEach(() => {
   vi.useFakeTimers({ shouldAdvanceTime: true })
   dir = mkdtempSync(join(tmpdir(), "mstodo-tokens-"))
-  tokenFile = join(dir, "tokens.json")
+  tokenFile = join(dir, "custom.json")
   // getTokens() falls back to ./tokens.json, which in this repo is a real credential.
   originalCwd = process.cwd()
   process.chdir(dir)
