@@ -15,9 +15,10 @@ interface StoredTokenData extends TokenData {
   tenantId?: string
 }
 
-// A Graph access token is a JWT, so its real expiry is in the `exp` claim. Reading it
-// beats guessing: the environment pair carries no expiry of its own, and assuming one
-// is what used to keep the refresh branch permanently out of reach.
+// Work and school accounts get a JWT access token, so the real expiry is in its `exp`
+// claim and does not have to be guessed. Personal accounts get an opaque token, where
+// the one-hour assumption is all there is — but the caller stamps it once instead of
+// on every call, which is what used to keep the refresh branch out of reach.
 const expiryFromAccessToken = (accessToken: string): number => {
   const FALLBACK_LIFETIME_MS = 3600 * 1000
   const REFRESH_BUFFER_MS = 5 * 60 * 1000
@@ -81,28 +82,27 @@ export class TokenManager {
 
   // Try to get tokens from multiple sources
   async getTokens(): Promise<TokenData | null> {
-    // 0. A token renewed in this process outranks everything below it. The environment
-    // pair and the file on disk are both starting points, and the environment pair in
-    // particular is never rewritten, so without this the stale value wins every time.
-    if (this.currentTokens && Date.now() < this.currentTokens.expiresAt) {
-      return this.currentTokens
-    }
-
     // 1. Check environment variables first (for backward compatibility)
     const envTokens = this.readEnvTokens()
     if (envTokens) {
-      if (Date.now() < envTokens.expiresAt) {
-        return envTokens
+      // Anything renewed in this process supersedes the environment pair. Nothing
+      // rewrites those variables, so the original values stay frozen at whatever they
+      // were at launch; preferring them would serve a stale access token forever and
+      // would re-send a refresh token the identity provider has already rotated away.
+      const live = this.currentTokens ?? envTokens
+
+      if (Date.now() < live.expiresAt) {
+        return live
       }
 
-      const refreshed = await this.refreshToken(envTokens.refreshToken)
+      const refreshed = await this.refreshToken(live.refreshToken)
       if (refreshed) {
         return refreshed
       }
 
       // Hand back the expired token rather than nothing: the caller's 401 says more
       // about what went wrong than a bare "not authenticated".
-      return envTokens
+      return live
     }
 
     // 2. Check stored token file

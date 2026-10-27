@@ -14,10 +14,15 @@ const jwtExpiringIn = (seconds: number): string => {
 
 let dir: string
 let tokenFile: string
+let originalCwd: string
 
 beforeEach(() => {
+  vi.useFakeTimers({ shouldAdvanceTime: true })
   dir = mkdtempSync(join(tmpdir(), "mstodo-tokens-"))
   tokenFile = join(dir, "tokens.json")
+  // getTokens() falls back to ./tokens.json, which in this repo is a real credential.
+  originalCwd = process.cwd()
+  process.chdir(dir)
   process.env.MSTODO_TOKEN_FILE = tokenFile
   delete process.env.MS_TODO_ACCESS_TOKEN
   delete process.env.MS_TODO_REFRESH_TOKEN
@@ -26,6 +31,8 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  vi.useRealTimers()
+  process.chdir(originalCwd)
   rmSync(dir, { recursive: true, force: true })
   vi.unstubAllGlobals()
   delete process.env.MSTODO_TOKEN_FILE
@@ -42,6 +49,10 @@ const stubRefresh = (accessToken: string) => {
   vi.stubGlobal("fetch", fetchMock)
   return fetchMock
 }
+
+// Which refresh_token a given call sent, read back out of the posted form body.
+const refreshTokenSentOn = (fetchMock: ReturnType<typeof vi.fn>, call: number): string =>
+  new URLSearchParams(String(fetchMock.mock.calls[call][1].body)).get("refresh_token") ?? ""
 
 describe("MSTODO_TOKEN_FILE", () => {
   it("reads tokens from the path the variable names", async () => {
@@ -101,6 +112,39 @@ describe("environment token pair", () => {
 
     expect(fetchMock).not.toHaveBeenCalled()
     expect(tokens?.accessToken).toBe(process.env.MS_TODO_ACCESS_TOKEN)
+  })
+
+  it("stamps an opaque token's expiry once instead of on every call", async () => {
+    // Personal Microsoft accounts get an opaque access token, so there is no `exp` to
+    // read and the one-hour assumption is all there is. It must not move with the clock.
+    process.env.MS_TODO_ACCESS_TOKEN = "opaque-not-a-jwt"
+    process.env.MS_TODO_REFRESH_TOKEN = "env-refresh"
+    const fetchMock = stubRefresh("renewed-from-opaque")
+    const manager = new TokenManager()
+
+    const first = await manager.getTokens()
+    vi.setSystemTime(Date.now() + 61 * 60 * 1000)
+    const second = await manager.getTokens()
+
+    expect(first?.accessToken).toBe("opaque-not-a-jwt")
+    expect(fetchMock).toHaveBeenCalledOnce()
+    expect(second?.accessToken).toBe("renewed-from-opaque")
+  })
+
+  it("refreshes with the rotated token, not the original environment one", async () => {
+    // Entra rotates the refresh token on every use. Re-sending the environment value
+    // would pin the chain to that token's own lifetime and drop each replacement.
+    process.env.MS_TODO_ACCESS_TOKEN = jwtExpiringIn(-60)
+    process.env.MS_TODO_REFRESH_TOKEN = "env-refresh"
+    const fetchMock = stubRefresh("renewed")
+    const manager = new TokenManager()
+
+    await manager.getTokens()
+    vi.setSystemTime(Date.now() + 61 * 60 * 1000)
+    await manager.getTokens()
+
+    expect(refreshTokenSentOn(fetchMock, 0)).toBe("env-refresh")
+    expect(refreshTokenSentOn(fetchMock, 1)).toBe("refreshed-refresh")
   })
 
   it("prefers a token refreshed in this process over the stale environment pair", async () => {

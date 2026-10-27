@@ -108,11 +108,11 @@ TENANT_ID=00000000-0000-0000-0000-000000000000
 
 ### Token Storage
 
-The server stores authentication tokens in `tokens.json`, refreshing them 5 minutes before they expire. It looks in three places, in order:
+The server stores authentication tokens in `tokens.json`. It looks in three places, in order:
 
 1. `MSTODO_TOKEN_FILE`, if set
 2. the per-user config directory — `~/.config/microsoft-todo-mcp/tokens.json`, or `%APPDATA%\microsoft-todo-mcp\tokens.json` on Windows
-3. `tokens.json` in the working directory, which is migrated to (2) on first read
+3. `tokens.json` in the working directory, which is migrated to whichever of (1) or (2) is in effect on first read
 
 ```bash
 # Override the location
@@ -126,7 +126,9 @@ export MS_TODO_ACCESS_TOKEN=your_access_token
 export MS_TODO_REFRESH_TOKEN=your_refresh_token
 ```
 
-These two are a starting point, not a live store — nothing rewrites your environment when a token is renewed. The server reads the expiry from the access token itself and refreshes against `CLIENT_ID` and `CLIENT_SECRET` when it runs out, keeping the renewed token for the rest of the session and writing it to the token file. Without those client credentials it cannot renew, and calls start failing once the supplied token expires.
+These two are a starting point, not a live store — nothing rewrites your environment when a token is renewed. A renewal is kept for the rest of the session and written to the token file, and the environment pair is not consulted again.
+
+How the expiry is known depends on your account type. Work and school accounts get a JWT access token, so the server reads the real deadline from it and renews 5 minutes early. Personal accounts get an opaque token, where there is nothing to read and the server assumes an hour from when it first saw the value. Either way renewal needs `CLIENT_ID` and `CLIENT_SECRET`; without them the server cannot refresh, and calls start failing once the supplied token runs out.
 
 ## Usage
 
