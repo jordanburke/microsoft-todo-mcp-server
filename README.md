@@ -108,16 +108,25 @@ TENANT_ID=00000000-0000-0000-0000-000000000000
 
 ### Token Storage
 
-The server stores authentication tokens in `tokens.json` with automatic refresh 5 minutes before expiration. You can override the token file location:
+The server stores authentication tokens in `tokens.json`, refreshing them 5 minutes before they expire. It looks in three places, in order:
+
+1. `MSTODO_TOKEN_FILE`, if set
+2. the per-user config directory — `~/.config/microsoft-todo-mcp/tokens.json`, or `%APPDATA%\microsoft-todo-mcp\tokens.json` on Windows
+3. `tokens.json` in the working directory, which is migrated to (2) on first read
 
 ```bash
-# Using environment variable
+# Override the location
 export MSTODO_TOKEN_FILE=/path/to/custom/tokens.json
+```
 
-# Or pass tokens directly
+You can also supply tokens directly, which takes precedence over the file:
+
+```bash
 export MS_TODO_ACCESS_TOKEN=your_access_token
 export MS_TODO_REFRESH_TOKEN=your_refresh_token
 ```
+
+These two are a starting point, not a live store — nothing rewrites your environment when a token is renewed. The server reads the expiry from the access token itself and refreshes against `CLIENT_ID` and `CLIENT_SECRET` when it runs out, keeping the renewed token for the rest of the session and writing it to the token file. Without those client credentials it cannot renew, and calls start failing once the supplied token expires.
 
 ## Usage
 
