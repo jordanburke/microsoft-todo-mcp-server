@@ -43,9 +43,11 @@ jobs:
       # registry credential, so there is no static secret to rotate. The trust is
       # configured on npmjs.com against this repo and this workflow file.
       #
-      # If that trust is missing, pnpm logs "Skipped OIDC: Failed token exchange" as a
+      # If that trust is missing, pnpm logs a line beginning "Skipped OIDC:" as a
       # *warning* and falls back to the placeholder token setup-node wrote, which the
-      # registry rejects with a masked 404. The "Skipped OIDC" line is the real error;
-      # the 404 is the symptom.
+      # registry rejects with a masked 404. Grep for "Skipped OIDC:" — the rest of that
+      # line varies by failure (ERR_PNPM_AUTH_TOKEN_EXCHANGE for a rejected exchange,
+      # ERR_PNPM_AUTH_TOKEN_FETCH for a network failure). It is the real error; the
+      # 404 is only the symptom.
       - name: Publish to npm
         run: pnpm publish --access public --no-git-checks --provenance
