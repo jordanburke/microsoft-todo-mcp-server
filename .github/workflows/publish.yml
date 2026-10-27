@@ -18,12 +18,14 @@ jobs:
       - name: Install pnpm
         uses: pnpm/action-setup@v4
 
-      # Exact patch, not a major. The npm bundled with the Node that setup-node
-      # happens to resolve decides whether OIDC works: 24.19.0 ships npm 11.17.0,
-      # which abandons the token exchange and falls back to interactive browser
-      # login (E401 "Failed to generate Web Auth URLs"); 24.20.0 ships npm 11.19.0,
-      # which works. A release job cannot be safely retried, so its credential must
-      # not depend on which runner picks it up.
+      # Exact patch, not a major, because a release job cannot be safely retried and
+      # should not vary with whichever 24.x the runner's tool cache happens to hold.
+      #
+      # It is NOT what gates OIDC here. pnpm performs the token exchange itself and
+      # never shells out to the npm CLI, so the bundled npm version is irrelevant on
+      # this path; `packageManager` (pnpm 11.27.0) is the version that matters, and
+      # it needs to stay at 11.1.3 or newer. The npm-CLI OIDC regressions recorded in
+      # the global notes apply to the repos that run `npm publish`, not to this one.
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -37,8 +39,13 @@ jobs:
       - name: Validate (format, lint, typecheck, test, build)
         run: pnpm validate
 
-      # No NODE_AUTH_TOKEN: npm trusted publishing exchanges the job's OIDC token
-      # for a short-lived credential, so there is no static secret to rotate. The
-      # trust is configured on npmjs.com against this repo and this workflow file.
+      # No NODE_AUTH_TOKEN: pnpm exchanges the job's OIDC token for a short-lived
+      # registry credential, so there is no static secret to rotate. The trust is
+      # configured on npmjs.com against this repo and this workflow file.
+      #
+      # If that trust is missing, pnpm logs "Skipped OIDC: Failed token exchange" as a
+      # *warning* and falls back to the placeholder token setup-node wrote, which the
+      # registry rejects with a masked 404. The "Skipped OIDC" line is the real error;
+      # the 404 is the symptom.
       - name: Publish to npm
         run: pnpm publish --access public --no-git-checks --provenance
