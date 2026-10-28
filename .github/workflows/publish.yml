@@ -16,7 +16,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
 
       # Exact patch, not a major, because a release job cannot be safely retried and
       # should not vary with whichever 24.x the runner's tool cache happens to hold.
