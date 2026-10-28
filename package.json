@@ -6,9 +6,9 @@
   "main": "dist/todo-index.js",
   "dependencies": {
     "@azure/msal-node": "^3.8.10",
-    "@modelcontextprotocol/sdk": "^1.29.0",
+    "@modelcontextprotocol/sdk": "^1.32.2",
     "dotenv": "^16.6.1",
-    "express": "^5.2.1",
+    "express": "^5.3.0",
     "zod": "^3.25.76"
   },
   "scripts": {
@@ -53,9 +53,9 @@
   "homepage": "https://github.com/jordanburke/microsoft-todo-mcp-server#readme",
   "devDependencies": {
     "@types/express": "^5.0.6",
-    "@types/node": "^22.19.21",
-    "ts-builds": "^3.2.0",
-    "tsdown": "^0.22.2"
+    "@types/node": "^22.20.5",
+    "ts-builds": "^4.0.2",
+    "tsdown": "^0.22.14"
   },
   "type": "module",
   "bin": {
@@ -70,5 +70,5 @@
   "publishConfig": {
     "access": "public"
   },
-  "packageManager": "pnpm@11.27.0+sha512.ad12821463bb143295f1fa3ecde77a6b9b97a7990386da800ff57bffc3964dc64b7b1c7559d5dbe5c337aea659ed9c8937d4370bd198ca2009bc6fa0249808e7"
+  "packageManager": "pnpm@12.16.1+sha512.091d1dee7927575661b25dab3c2ae31cafc1c54d6b71ed6a6600cf0c1cb10434a447eae14015f1b23e2e6bedeed79df94a932e2164d2832280dce3fb32f656d1"
 }
