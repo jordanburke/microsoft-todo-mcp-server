@@ -15,8 +15,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # The floating v6 tag is load-bearing: pnpm 12 support landed in v6.1.0, so a pin
-      # to v6.0.x would fail to install the version `packageManager` asks for.
       - name: Install pnpm
         uses: pnpm/action-setup@v6
 
