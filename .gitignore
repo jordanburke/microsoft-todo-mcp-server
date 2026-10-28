@@ -14,6 +14,10 @@ lib/
 # Test coverage
 coverage/
 
+# vitest 5 JSON/JUnit reporter output, ts-builds lint report
+.vitest/
+.ts-builds/
+
 # Environment variables
 .env*
 .env

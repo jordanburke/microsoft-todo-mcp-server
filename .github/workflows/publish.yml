@@ -23,7 +23,7 @@ jobs:
       #
       # It is NOT what gates OIDC here. pnpm performs the token exchange itself and
       # never shells out to the npm CLI, so the bundled npm version is irrelevant on
-      # this path; `packageManager` (pnpm 11.27.0) is the version that matters, and
+      # this path; `packageManager` (pnpm 12.16.1) is the version that matters, and
       # it needs to stay at 11.1.3 or newer. The npm-CLI OIDC regressions recorded in
       # the global notes apply to the repos that run `npm publish`, not to this one.
       - name: Setup Node.js

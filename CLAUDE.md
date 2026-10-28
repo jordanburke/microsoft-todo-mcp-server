@@ -7,13 +7,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ### Build and Development
 
 ```bash
-pnpm install         # Install dependencies (pnpm 11)
+pnpm install         # Install dependencies (pnpm 12)
 pnpm run build       # Build with ts-builds (tsdown) to dist/ directory
 pnpm run dev         # Build and run CLI in one command
 pnpm run validate    # Full chain: format, lint, typecheck, test, build
 ```
 
-Build tooling is provided by **ts-builds** (3.x); package scripts delegate to the
+Build tooling is provided by **ts-builds** (4.x); package scripts delegate to the
 `ts-builds` CLI. Output extension is forced to `.js` via `tsdown.config.ts` so the
 `bin`/`main` paths and `./*.js` source imports keep resolving.
 
@@ -31,14 +31,15 @@ pnpm run cli         # Run MCP server via CLI wrapper
 pnpm start           # Run MCP server directly
 ```
 
-## ts-builds & pnpm 11 Notes
+## ts-builds & pnpm 12 Notes
 
-Built with **ts-builds 3.2.0** (tsdown) on **pnpm 11**. Non-obvious, load-bearing constraints:
+Built with **ts-builds 4.0.2** (tsdown, vitest 5) on **pnpm 12**. Non-obvious, load-bearing constraints:
 
-- **Node >= 22.13 required.** pnpm 11 crashes on Node 20 (`ERR_UNKNOWN_BUILTIN_MODULE`). CI runs Node 22.x/24.x; the publish workflow reads `.nvmrc`, pinned to the exact patch `24.21.0` so a non-retryable release job does not vary with the runner's tool cache. **pnpm, not npm, performs the OIDC token exchange** for trusted publishing — it never shells out to the npm CLI — so `packageManager` (pnpm 11.27.0, needs >= 11.1.3) is the version that gates publishing, not the bundled npm.
+- **Node >= 22.12 required.** ts-builds 4 bundles vitest 5, whose `engines.node` is `^22.12.0 || ^24.0.0 || >=26.0.0`. CI runs Node 22.x/24.x; the publish workflow reads `.nvmrc`, pinned to the exact patch `24.21.0` so a non-retryable release job does not vary with the runner's tool cache. **pnpm, not npm, performs the OIDC token exchange** for trusted publishing — it never shells out to the npm CLI — so `packageManager` (pnpm 12.16.1) is the version that gates publishing, not the bundled npm. Publishing was last proven on pnpm 11.27.0; the first release under pnpm 12 is the check for it.
 - **Keep `globals` in `publicHoistPattern`** (`pnpm-workspace.yaml`). `eslint.config.js` imports `globals`, which `*eslint*` does not match. Without the explicit hoist line, resolution falls back to pnpm's incidental `.pnpm` virtual-store hoist — passes locally but **fails CI** with `Cannot find package 'globals'`. It is load-bearing, not redundant; ts-builds 3.2.0 only adds it for _new_ `init`s, it does not retro-fit this file.
 - **First-party release-age excludes are globs, not pins.** `minimumReleaseAgeExclude` is `*functype*` + `ts-builds`. `pnpm add` auto-adds per-version pins for first-party packages within the 24h cooldown — collapse them back to the glob (pins re-trip on every release).
-- **`allowBuilds: esbuild: false`** is required under pnpm 11 `strictDepBuilds` (esbuild's binary ships via `@esbuild/<platform>` optional deps; build script not needed).
+- **`allowBuilds: esbuild: false`** is required under pnpm's `strictDepBuilds` (esbuild's binary ships via `@esbuild/<platform>` optional deps; build script not needed).
+- **pnpm 12 locks itself.** `pnpm-lock.yaml` opens with a `packageManagerDependencies` document pinning `pnpm` and `@pnpm/exe` to the `packageManager` version. Bumping `packageManager` changes that header; it is not a dependency change. pnpm 12 also fails installs on an unknown `pnpm-workspace.yaml` setting.
 - **tsdown emits `.js`, not `.mjs`.** `tsdown.config.ts` forces `outExtensions: () => ({ js: ".js" })` so the `bin`/`main` paths and `./*.js` imports resolve. Don't drop it.
 - **`pnpm install` in a non-TTY shell** may abort with `ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY` — prefix with `CI=true`. Note `CI=true` makes `--frozen-lockfile` the default, so add `--no-frozen-lockfile` when intentionally updating the lockfile.
 
