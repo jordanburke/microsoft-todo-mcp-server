@@ -216,6 +216,54 @@ pnpm run lint         # Run linting checks
 pnpm run typecheck    # TypeScript type checking
 ```
 
+## Remote / HTTP Transport
+
+By default this server speaks MCP over **stdio**, same as before — that's what Claude Desktop
+and Cursor expect, and nothing above changes for that use case.
+
+This adds a second, opt-in transport: a **stateless Streamable HTTP** transport, for calling the
+server over plain HTTP(S) from a hosted LLM agent that can't spawn a local subprocess.
+
+### Enabling it
+
+```bash
+MCP_TRANSPORT=http PORT=8080 node dist/todo-index.js
+```
+
+| Env var         | Default | Meaning                                                           |
+| --------------- | ------- | ----------------------------------------------------------------- |
+| `MCP_TRANSPORT` | `stdio` | `stdio` (default) or `http`. Anything else falls back to `stdio`. |
+| `PORT`          | `8080`  | Port the HTTP transport listens on.                               |
+
+With `MCP_TRANSPORT=http`, the server exposes:
+
+- `POST /mcp` — the MCP Streamable HTTP endpoint. Send JSON-RPC requests with
+  `Content-Type: application/json` and `Accept: application/json, text/event-stream`.
+- `GET /mcp`, `DELETE /mcp` — always `405`. Those verbs exist in the Streamable HTTP spec to open
+  a server-initiated stream or close a session; this server has neither, by design (see below).
+- `GET /healthz` — plain liveness check for load balancers / uptime monitors. Never touches
+  Microsoft Graph or the token cache.
+
+### Why stateless
+
+The Streamable HTTP spec has an _optional_ session ID that lets a server keep per-connection
+state between requests (mainly for SSE stream resumability). This server opts out of it
+(`sessionIdGenerator: undefined`) and instead builds a brand-new `McpServer` +
+`StreamableHTTPServerTransport` pair for every single request, used once and discarded.
+
+That means:
+
+- Two concurrent requests can never cross-talk, because they never touch the same transport
+  object.
+- It doesn't matter which process (or how many, behind a load balancer) handles a given request,
+  since no in-memory state is required to be there when the next request from the same "session"
+  arrives. There _is_ no session.
+
+The one thing that legitimately needs to survive across requests when this is deployed somewhere
+with ephemeral/multiple instances (Cloud Run, a container orchestrator, etc.) is the OAuth token
+cache in `token-manager.ts` — that's an existing concern independent of this transport, and worth
+its own follow-up depending on where this ends up hosted.
+
 ## MCP Tools
 
 The server provides 13 tools for comprehensive Microsoft To Do management:
