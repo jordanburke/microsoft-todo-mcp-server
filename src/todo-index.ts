@@ -24,6 +24,10 @@ const server = new McpServer({
 })
 
 // Helper function for making Microsoft Graph API requests
+// Text of the last Graph failure, so a caller can report why a request failed
+// instead of an opaque "failed to retrieve".
+let lastGraphError: string | null = null
+
 async function makeGraphRequest<T>(url: string, token: string, method = "GET", body?: any): Promise<T | null> {
   const headers = {
     "User-Agent": USER_AGENT,
@@ -53,6 +57,7 @@ async function makeGraphRequest<T>(url: string, token: string, method = "GET", b
       })}`,
     )
 
+    lastGraphError = null
     let response = await fetch(url, options)
 
     // If we get a 401, try to refresh the token and retry once
@@ -100,8 +105,39 @@ but API access is restricted for personal accounts.
     return data as T
   } catch (error) {
     console.error("Error making Graph API request:", error)
+    lastGraphError = error instanceof Error ? error.message : String(error)
     return null
   }
+}
+
+// Graph paginates collections on its own terms and signals more pages with
+// @odata.nextLink; a large $top does not suppress that. Reading response.value once
+// therefore drops everything past the first page. This follows the links to the end,
+// or until `limit` items are collected. A failed page fails the whole call, so callers
+// never get a silently truncated list.
+async function makeGraphRequestAll<T>(url: string, token: string, limit?: number): Promise<T[] | null> {
+  const items: T[] = []
+  let next: string | undefined = url
+  let pages = 0
+
+  while (next) {
+    const page: { value: T[]; "@odata.nextLink"?: string } | null = await makeGraphRequest<{
+      value: T[]
+      "@odata.nextLink"?: string
+    }>(next, token)
+    if (!page) return null
+    items.push(...(page.value || []))
+    if (limit !== undefined && items.length >= limit) return items.slice(0, limit)
+    next = page["@odata.nextLink"]
+    pages++
+    if (pages >= 100 && next) {
+      lastGraphError = "stopped after 100 pages without reaching the end of the collection"
+      console.error(`makeGraphRequestAll: ${lastGraphError}`)
+      return null
+    }
+  }
+
+  return items
 }
 
 // Authentication helper using delegated flow with token manager
@@ -294,7 +330,8 @@ server.tool(
         }
       }
 
-      const response = await makeGraphRequest<{ value: TaskList[] }>(`${MS_GRAPH_BASE}/me/todo/lists`, token)
+      const fetchedLists = await makeGraphRequestAll<TaskList>(`${MS_GRAPH_BASE}/me/todo/lists`, token)
+      const response = fetchedLists ? { value: fetchedLists } : null
 
       if (!response) {
         return {
@@ -385,7 +422,8 @@ server.tool(
         }
       }
 
-      const response = await makeGraphRequest<{ value: TaskList[] }>(`${MS_GRAPH_BASE}/me/todo/lists`, token)
+      const fetchedLists = await makeGraphRequestAll<TaskList>(`${MS_GRAPH_BASE}/me/todo/lists`, token)
+      const response = fetchedLists ? { value: fetchedLists } : null
 
       if (!response) {
         return {
@@ -832,20 +870,22 @@ server.tool(
 
       console.error(`Making request to: ${url}`)
 
-      const response = await makeGraphRequest<{ value: Task[]; "@odata.count"?: number }>(url, token)
+      const allTasks = await makeGraphRequestAll<Task>(url, token, top)
 
-      if (!response) {
+      if (!allTasks) {
         return {
           content: [
             {
               type: "text",
-              text: `Failed to retrieve tasks for list: ${listId}`,
+              text:
+                `Failed to retrieve tasks for list: ${listId}` +
+                (lastGraphError ? ` | Graph said: ${lastGraphError}` : ""),
             },
           ],
         }
       }
 
-      const tasks = response.value || []
+      const tasks = allTasks
       if (tasks.length === 0) {
         return {
           content: [
@@ -898,8 +938,8 @@ server.tool(
 
       // Add count information if requested and available
       let countInfo = ""
-      if (count && response["@odata.count"] !== undefined) {
-        countInfo = `Total count: ${response["@odata.count"]}\n\n`
+      if (count) {
+        countInfo = `Total count: ${tasks.length}\n\n`
       }
 
       return {
@@ -1296,10 +1336,11 @@ server.tool(
       const taskTitle = taskResponse ? taskResponse.title : "Unknown Task"
 
       // Fetch the checklist items
-      const response = await makeGraphRequest<{ value: ChecklistItem[] }>(
+      const checklistItems = await makeGraphRequestAll<ChecklistItem>(
         `${MS_GRAPH_BASE}/me/todo/lists/${listId}/tasks/${taskId}/checklistItems`,
         token,
       )
+      const response = checklistItems ? { value: checklistItems } : null
 
       if (!response) {
         return {
@@ -1607,10 +1648,11 @@ server.tool(
       cutoffDate.setDate(cutoffDate.getDate() - olderThanDays)
 
       // Get all completed tasks from source list
-      const tasksResponse = await makeGraphRequest<{ value: Task[] }>(
+      const archivedTasks = await makeGraphRequestAll<Task>(
         `${MS_GRAPH_BASE}/me/todo/lists/${sourceListId}/tasks?$filter=status eq 'completed'`,
         token,
       )
+      const tasksResponse = archivedTasks ? { value: archivedTasks } : null
 
       if (!tasksResponse || !tasksResponse.value) {
         return {
