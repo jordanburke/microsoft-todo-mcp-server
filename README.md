@@ -252,7 +252,8 @@ The server provides 13 tools for comprehensive Microsoft To Do management:
 ### Tasks (Main Todo Items)
 
 - **`get-tasks`** - Get tasks from a list with filtering, sorting, and pagination
-  - Supports OData query parameters: `$filter`, `$select`, `$orderby`, `$top`, `$skip`, `$count`
+  - Supports OData query parameters: `$filter`, `$orderby`, `$top`, `$skip`, `$count`
+  - `select` limits which fields print (`status`, `dueDateTime`, `importance`, `categories`, `body`); it is applied by the server, not sent to Graph
 - **`create-task`** - Create a new task with full property support
   - Title, description, due date, start date, importance, reminders, status, categories
 - **`update-task`** - Update any task properties
