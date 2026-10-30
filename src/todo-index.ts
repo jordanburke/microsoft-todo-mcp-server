@@ -130,9 +130,10 @@ async function makeGraphRequestAll<T>(url: string, token: string, limit?: number
     if (limit !== undefined && items.length >= limit) return items.slice(0, limit)
     next = page["@odata.nextLink"]
     pages++
-    if (pages > 100) {
-      console.error("makeGraphRequestAll: stopping after 100 pages")
-      break
+    if (pages >= 100 && next) {
+      lastGraphError = "stopped after 100 pages without reaching the end of the collection"
+      console.error(`makeGraphRequestAll: ${lastGraphError}`)
+      return null
     }
   }
 
