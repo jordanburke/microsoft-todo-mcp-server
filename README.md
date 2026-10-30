@@ -5,6 +5,24 @@
 
 A Model Context Protocol (MCP) server that enables AI assistants like Claude and Cursor to interact with Microsoft To Do via the Microsoft Graph API. This service provides comprehensive task management capabilities through a secure OAuth 2.0 authentication flow.
 
+## Just want to try it? Use Agent Todo
+
+Running this server yourself means registering an app in Azure and managing its client secret. If you'd rather skip that, [Agent Todo](https://agent-todo.com) is a hosted MCP server that supports Microsoft To Do, from the same maintainer. You sign in to Agent Todo, connect your Microsoft To Do account on its Connections page, then add the connector to your AI assistant. There's nothing to register or install.
+
+- **Free plan:** one connected task provider, such as Microsoft To Do, with read and write access.
+- **Pro plan:** every provider (Google Tasks and Todoist too), with sync between them.
+
+Connect it from any MCP client that supports remote servers. It signs you in with OAuth on first use.
+
+```bash
+# Claude Code
+claude mcp add --transport http agent-todo https://api.agent-gate.com/agent-todo/mcp
+```
+
+In Claude Desktop or claude.ai, open Settings, then Connectors, and add `https://api.agent-gate.com/agent-todo/mcp` as a custom connector.
+
+Want to run it on your own machine, or keep your tokens local? Keep reading to set up this server.
+
 ## Features
 
 - **15 MCP Tools**: Complete task management functionality including lists, tasks, checklist items, and organization features
