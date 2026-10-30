@@ -796,7 +796,12 @@ server.tool(
   {
     listId: z.string().describe("ID of the task list"),
     filter: z.string().optional().describe("OData $filter query (e.g., 'status eq \\'completed\\'')"),
-    select: z.string().optional().describe("Comma-separated list of properties to include (e.g., 'id,title,status')"),
+    select: z
+      .string()
+      .optional()
+      .describe(
+        "Comma-separated subset of the shown fields to include: status, dueDateTime, importance, categories, body (e.g., 'status,dueDateTime'). id and title are always included; other names are ignored.",
+      ),
     orderby: z.string().optional().describe("Property to sort by (e.g., 'createdDateTime desc')"),
     top: z.number().optional().describe("Maximum number of tasks to retrieve"),
     skip: z.number().optional().describe("Number of tasks to skip"),
@@ -861,8 +866,9 @@ server.tool(
         }
       }
 
-      // Client-side stand-in for $select (see above). No list, or a list naming a field
-      // that is not optional here, means "everything" — the pre-existing behaviour.
+      // Client-side stand-in for $select (see above). No list means everything. ID and Title
+      // always print; status, dueDateTime, importance, categories and body print only when
+      // named. Any other name is ignored.
       const wanted = select
         ? new Set(
             select
