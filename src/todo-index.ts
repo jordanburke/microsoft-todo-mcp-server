@@ -112,8 +112,10 @@ but API access is restricted for personal accounts.
 
 // Graph paginates collections on its own terms and signals more pages with
 // @odata.nextLink; a large $top does not suppress that. Reading response.value once
-// therefore drops everything past the first page. This follows the links to the end.
-async function makeGraphRequestAll<T>(url: string, token: string): Promise<T[] | null> {
+// therefore drops everything past the first page. This follows the links to the end,
+// or until `limit` items are collected. A failed page fails the whole call, so callers
+// never get a silently truncated list.
+async function makeGraphRequestAll<T>(url: string, token: string, limit?: number): Promise<T[] | null> {
   const items: T[] = []
   let next: string | undefined = url
   let pages = 0
@@ -123,8 +125,9 @@ async function makeGraphRequestAll<T>(url: string, token: string): Promise<T[] |
       value: T[]
       "@odata.nextLink"?: string
     }>(next, token)
-    if (!page) return items.length > 0 ? items : null
+    if (!page) return null
     items.push(...(page.value || []))
+    if (limit !== undefined && items.length >= limit) return items.slice(0, limit)
     next = page["@odata.nextLink"]
     pages++
     if (pages > 100) {
@@ -866,14 +869,16 @@ server.tool(
 
       console.error(`Making request to: ${url}`)
 
-      const allTasks = await makeGraphRequestAll<Task>(url, token)
+      const allTasks = await makeGraphRequestAll<Task>(url, token, top)
 
       if (!allTasks) {
         return {
           content: [
             {
               type: "text",
-              text: `Failed to retrieve tasks for list: ${listId}` + (lastGraphError ? ` | Graph said: ${lastGraphError}` : ""),
+              text:
+                `Failed to retrieve tasks for list: ${listId}` +
+                (lastGraphError ? ` | Graph said: ${lastGraphError}` : ""),
             },
           ],
         }
