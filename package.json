@@ -1,6 +1,6 @@
 {
   "name": "microsoft-todo-mcp-server",
-  "version": "1.1.4",
+  "version": "1.2.0",
   "description": "Microsoft Todo MCP service for Claude and Cursor. Fork of @jhirono/todomcp",
   "mcpName": "io.github.jordanburke/microsoft-todo-mcp-server",
   "main": "dist/todo-index.js",

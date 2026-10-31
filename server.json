@@ -6,12 +6,12 @@
     "url": "https://github.com/jordanburke/microsoft-todo-mcp-server",
     "source": "github"
   },
-  "version": "1.1.4",
+  "version": "1.2.0",
   "packages": [
     {
       "registryType": "npm",
       "identifier": "microsoft-todo-mcp-server",
-      "version": "1.1.4",
+      "version": "1.2.0",
       "transport": {
         "type": "stdio"
       },
