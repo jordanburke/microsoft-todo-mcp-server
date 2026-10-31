@@ -1,8 +1,8 @@
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
-import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import dotenv from "dotenv"
 import { existsSync, readFileSync, writeFileSync } from "fs"
-import { join } from "path"
+import { dirname, join } from "path"
+import { createServer } from "somamcp/node"
+import { fileURLToPath } from "url"
 import { z } from "zod"
 
 import { tokenManager } from "./token-manager.js"
@@ -17,11 +17,19 @@ console.error("Current working directory:", process.cwd())
 const MS_GRAPH_BASE = "https://graph.microsoft.com/v1.0"
 const USER_AGENT = "microsoft-todo-mcp-server/1.0"
 
+// The published version, read from package.json (one level up from dist/ and src/), so
+// serverInfo reports what is installed.
+const PACKAGE_VERSION: `${number}.${number}.${number}` = JSON.parse(
+  readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "package.json"), "utf8"),
+).version
+
 // Create server instance
 // Exported so specs can drive the tools in-process, without a build or a stdio child.
-export const server = new McpServer({
+export const server = createServer({
   name: "mstodo",
-  version: "1.0.0",
+  version: PACKAGE_VERSION,
+  // Off for the before/after comparison with the pre-somamcp build; turned on afterwards.
+  enableIntrospection: false,
 })
 
 // Helper function for making Microsoft Graph API requests
@@ -218,11 +226,12 @@ but API access is restricted for personal accounts.
 }
 
 // Server tool to check authentication status
-server.tool(
-  "auth-status",
-  "Check if you're authenticated with Microsoft Graph API. Shows current token status and expiration time, and indicates if the token needs to be refreshed.",
-  {},
-  async () => {
+server.addTool({
+  name: "auth-status",
+  description:
+    "Check if you're authenticated with Microsoft Graph API. Shows current token status and expiration time, and indicates if the token needs to be refreshed.",
+  parameters: z.object({}),
+  execute: async () => {
     const tokens = await tokenManager.getTokens()
 
     if (!tokens) {
@@ -271,7 +280,7 @@ server.tool(
       }
     }
   },
-)
+})
 
 interface TaskList {
   id: string
@@ -482,11 +491,12 @@ interface ChecklistItem {
 }
 
 // Register tools
-server.tool(
-  "get-task-lists",
-  "Get all Microsoft Todo task lists (the top-level containers that organize your tasks). Shows list names, IDs, and indicates default or shared lists.",
-  {},
-  async () => {
+server.addTool({
+  name: "get-task-lists",
+  description:
+    "Get all Microsoft Todo task lists (the top-level containers that organize your tasks). Shows list names, IDs, and indicates default or shared lists.",
+  parameters: z.object({}),
+  execute: async () => {
     try {
       const token = await getAccessToken()
       if (!token) {
@@ -565,20 +575,21 @@ server.tool(
       }
     }
   },
-)
+})
 
 // Enhanced organized view of task lists
-server.tool(
-  "get-task-lists-organized",
-  "Get all task lists organized into logical folders/categories based on naming patterns, emoji prefixes, and sharing status. Provides a hierarchical view similar to folder organization.",
-  {
+server.addTool({
+  name: "get-task-lists-organized",
+  description:
+    "Get all task lists organized into logical folders/categories based on naming patterns, emoji prefixes, and sharing status. Provides a hierarchical view similar to folder organization.",
+  parameters: z.object({
     includeIds: z.boolean().optional().describe("Include list IDs in output (default: false)"),
     groupBy: z
       .enum(["category", "shared", "type"])
       .optional()
       .describe("Grouping strategy - 'category' (default), 'shared', or 'type'"),
-  },
-  async ({ includeIds, groupBy }) => {
+  }),
+  execute: async ({ includeIds, groupBy }) => {
     try {
       const token = await getAccessToken()
       if (!token) {
@@ -821,15 +832,16 @@ server.tool(
       }
     }
   },
-)
+})
 
-server.tool(
-  "create-task-list",
-  "Create a new task list (top-level container) in Microsoft Todo to help organize your tasks into categories or projects.",
-  {
+server.addTool({
+  name: "create-task-list",
+  description:
+    "Create a new task list (top-level container) in Microsoft Todo to help organize your tasks into categories or projects.",
+  parameters: z.object({
     displayName: z.string().describe("Name of the new task list"),
-  },
-  async ({ displayName }) => {
+  }),
+  execute: async ({ displayName }) => {
     try {
       const token = await getAccessToken()
       if (!token) {
@@ -881,16 +893,16 @@ server.tool(
       }
     }
   },
-)
+})
 
-server.tool(
-  "update-task-list",
-  "Update the name of an existing task list (top-level container) in Microsoft Todo.",
-  {
+server.addTool({
+  name: "update-task-list",
+  description: "Update the name of an existing task list (top-level container) in Microsoft Todo.",
+  parameters: z.object({
     listId: z.string().describe("ID of the task list to update"),
     displayName: z.string().describe("New name for the task list"),
-  },
-  async ({ listId, displayName }) => {
+  }),
+  execute: async ({ listId, displayName }) => {
     try {
       const token = await getAccessToken()
       if (!token) {
@@ -947,15 +959,16 @@ server.tool(
       }
     }
   },
-)
+})
 
-server.tool(
-  "delete-task-list",
-  "Delete a task list (top-level container) from Microsoft Todo. This will remove the list and all tasks within it.",
-  {
+server.addTool({
+  name: "delete-task-list",
+  description:
+    "Delete a task list (top-level container) from Microsoft Todo. This will remove the list and all tasks within it.",
+  parameters: z.object({
     listId: z.string().describe("ID of the task list to delete"),
-  },
-  async ({ listId }) => {
+  }),
+  execute: async ({ listId }) => {
     try {
       const token = await getAccessToken()
       if (!token) {
@@ -996,12 +1009,13 @@ server.tool(
       }
     }
   },
-)
+})
 
-server.tool(
-  "get-tasks",
-  "Get tasks from a specific Microsoft Todo list. These are the main todo items that can contain checklist items (subtasks).",
-  {
+server.addTool({
+  name: "get-tasks",
+  description:
+    "Get tasks from a specific Microsoft Todo list. These are the main todo items that can contain checklist items (subtasks).",
+  parameters: z.object({
     listId: z.string().describe("ID of the task list"),
     filter: z.string().optional().describe("OData $filter query (e.g., 'status eq \\'completed\\'')"),
     select: z
@@ -1014,8 +1028,8 @@ server.tool(
     top: z.number().optional().describe("Maximum number of tasks to retrieve"),
     skip: z.number().optional().describe("Number of tasks to skip"),
     count: z.boolean().optional().describe("Whether to include a count of tasks"),
-  },
-  async ({ listId, filter, select, orderby, top, skip, count }) => {
+  }),
+  execute: async ({ listId, filter, select, orderby, top, skip, count }) => {
     try {
       const token = await getAccessToken()
       if (!token) {
@@ -1158,12 +1172,13 @@ server.tool(
       }
     }
   },
-)
+})
 
-server.tool(
-  "create-task",
-  "Create a new task in a specific Microsoft Todo list. A task is the main todo item that can have a title, description, due date, and other properties. Pass `recurrence` to make the task repeat (e.g. monthly bill payments, birthdays, weekly reviews).",
-  {
+server.addTool({
+  name: "create-task",
+  description:
+    "Create a new task in a specific Microsoft Todo list. A task is the main todo item that can have a title, description, due date, and other properties. Pass `recurrence` to make the task repeat (e.g. monthly bill payments, birthdays, weekly reviews).",
+  parameters: z.object({
     listId: z.string().describe("ID of the task list"),
     title: z.string().describe("Title of the task"),
     body: z.string().optional().describe("Description or body content of the task"),
@@ -1182,8 +1197,8 @@ server.tool(
       .describe(
         "Recurrence rule. Omit for a one-off task. Requires `dueDateTime` to be set (the recurrence derives its first occurrence from it).",
       ),
-  },
-  async ({
+  }),
+  execute: async ({
     listId,
     title,
     body,
@@ -1314,12 +1329,13 @@ server.tool(
       }
     }
   },
-)
+})
 
-server.tool(
-  "update-task",
-  "Update an existing task in Microsoft Todo. Allows changing any properties of the task including title, due date, importance, and recurrence. To stop a recurring task, pass `recurrence: null`. Pass a new `recurrence` object to change or add recurrence.",
-  {
+server.addTool({
+  name: "update-task",
+  description:
+    "Update an existing task in Microsoft Todo. Allows changing any properties of the task including title, due date, importance, and recurrence. To stop a recurring task, pass `recurrence: null`. Pass a new `recurrence` object to change or add recurrence.",
+  parameters: z.object({
     listId: z.string().describe("ID of the task list"),
     taskId: z.string().describe("ID of the task to update"),
     title: z.string().optional().describe("New title of the task"),
@@ -1340,8 +1356,8 @@ server.tool(
       .describe(
         "New recurrence rule for the task. Pass an object to set/change recurrence. Pass `null` to make the task one-off (clears any existing recurrence). Omit to leave recurrence untouched.",
       ),
-  },
-  async ({
+  }),
+  execute: async ({
     listId,
     taskId,
     title,
@@ -1530,16 +1546,17 @@ server.tool(
       }
     }
   },
-)
+})
 
-server.tool(
-  "delete-task",
-  "Delete a task from a Microsoft Todo list. This will remove the task and all its checklist items (subtasks).",
-  {
+server.addTool({
+  name: "delete-task",
+  description:
+    "Delete a task from a Microsoft Todo list. This will remove the task and all its checklist items (subtasks).",
+  parameters: z.object({
     listId: z.string().describe("ID of the task list"),
     taskId: z.string().describe("ID of the task to delete"),
-  },
-  async ({ listId, taskId }) => {
+  }),
+  execute: async ({ listId, taskId }) => {
     try {
       const token = await getAccessToken()
       if (!token) {
@@ -1580,16 +1597,17 @@ server.tool(
       }
     }
   },
-)
+})
 
-server.tool(
-  "get-checklist-items",
-  "Get checklist items (subtasks) for a specific task. Checklist items are smaller steps or components that belong to a parent task.",
-  {
+server.addTool({
+  name: "get-checklist-items",
+  description:
+    "Get checklist items (subtasks) for a specific task. Checklist items are smaller steps or components that belong to a parent task.",
+  parameters: z.object({
     listId: z.string().describe("ID of the task list"),
     taskId: z.string().describe("ID of the task"),
-  },
-  async ({ listId, taskId }) => {
+  }),
+  execute: async ({ listId, taskId }) => {
     try {
       const token = await getAccessToken()
       if (!token) {
@@ -1673,18 +1691,19 @@ server.tool(
       }
     }
   },
-)
+})
 
-server.tool(
-  "create-checklist-item",
-  "Create a new checklist item (subtask) for a task. Checklist items help break down a task into smaller, manageable steps.",
-  {
+server.addTool({
+  name: "create-checklist-item",
+  description:
+    "Create a new checklist item (subtask) for a task. Checklist items help break down a task into smaller, manageable steps.",
+  parameters: z.object({
     listId: z.string().describe("ID of the task list"),
     taskId: z.string().describe("ID of the task"),
     displayName: z.string().describe("Text content of the checklist item"),
     isChecked: z.boolean().optional().describe("Whether the item is checked off"),
-  },
-  async ({ listId, taskId, displayName, isChecked }) => {
+  }),
+  execute: async ({ listId, taskId, displayName, isChecked }) => {
     try {
       const token = await getAccessToken()
       if (!token) {
@@ -1745,19 +1764,20 @@ server.tool(
       }
     }
   },
-)
+})
 
-server.tool(
-  "update-checklist-item",
-  "Update an existing checklist item (subtask). Allows changing the text content or completion status of the subtask.",
-  {
+server.addTool({
+  name: "update-checklist-item",
+  description:
+    "Update an existing checklist item (subtask). Allows changing the text content or completion status of the subtask.",
+  parameters: z.object({
     listId: z.string().describe("ID of the task list"),
     taskId: z.string().describe("ID of the task"),
     checklistItemId: z.string().describe("ID of the checklist item to update"),
     displayName: z.string().optional().describe("New text content of the checklist item"),
     isChecked: z.boolean().optional().describe("Whether the item is checked off"),
-  },
-  async ({ listId, taskId, checklistItemId, displayName, isChecked }) => {
+  }),
+  execute: async ({ listId, taskId, checklistItemId, displayName, isChecked }) => {
     try {
       const token = await getAccessToken()
       if (!token) {
@@ -1834,17 +1854,18 @@ server.tool(
       }
     }
   },
-)
+})
 
-server.tool(
-  "delete-checklist-item",
-  "Delete a checklist item (subtask) from a task. This removes just the specific subtask, not the parent task.",
-  {
+server.addTool({
+  name: "delete-checklist-item",
+  description:
+    "Delete a checklist item (subtask) from a task. This removes just the specific subtask, not the parent task.",
+  parameters: z.object({
     listId: z.string().describe("ID of the task list"),
     taskId: z.string().describe("ID of the task"),
     checklistItemId: z.string().describe("ID of the checklist item to delete"),
-  },
-  async ({ listId, taskId, checklistItemId }) => {
+  }),
+  execute: async ({ listId, taskId, checklistItemId }) => {
     try {
       const token = await getAccessToken()
       if (!token) {
@@ -1885,13 +1906,14 @@ server.tool(
       }
     }
   },
-)
+})
 
 // Bulk archive completed tasks
-server.tool(
-  "archive-completed-tasks",
-  "Move completed tasks older than a specified number of days from one list to another (archive) list. Useful for cleaning up active lists while preserving historical tasks.",
-  {
+server.addTool({
+  name: "archive-completed-tasks",
+  description:
+    "Move completed tasks older than a specified number of days from one list to another (archive) list. Useful for cleaning up active lists while preserving historical tasks.",
+  parameters: z.object({
     sourceListId: z.string().describe("ID of the source list to archive tasks from"),
     targetListId: z.string().describe("ID of the target archive list"),
     olderThanDays: z
@@ -1904,8 +1926,8 @@ server.tool(
       .optional()
       .default(false)
       .describe("If true, only preview what would be archived without making changes"),
-  },
-  async ({ sourceListId, targetListId, olderThanDays, dryRun }) => {
+  }),
+  execute: async ({ sourceListId, targetListId, olderThanDays, dryRun }) => {
     try {
       const token = await getAccessToken()
       if (!token) {
@@ -2032,16 +2054,17 @@ server.tool(
       }
     }
   },
-)
+})
 
 // Test tool to explore Graph API for hidden properties
-server.tool(
-  "test-graph-api-exploration",
-  "Test various Graph API queries to discover hidden properties or endpoints for folder/group organization in Microsoft To Do.",
-  {
+server.addTool({
+  name: "test-graph-api-exploration",
+  description:
+    "Test various Graph API queries to discover hidden properties or endpoints for folder/group organization in Microsoft To Do.",
+  parameters: z.object({
     testType: z.enum(["odata-select", "odata-expand", "headers", "extensions", "all"]).describe("Type of test to run"),
-  },
-  async ({ testType }) => {
+  }),
+  execute: async ({ testType }) => {
     try {
       const token = await getAccessToken()
       if (!token) {
@@ -2209,7 +2232,7 @@ server.tool(
       }
     }
   },
-)
+})
 
 // Main function to start the server
 export async function startServer(): Promise<void> {
@@ -2218,8 +2241,7 @@ export async function startServer(): Promise<void> {
     await isPersonalMicrosoftAccount()
 
     // Start the server
-    const transport = new StdioServerTransport()
-    await server.connect(transport)
+    await server.start({ transportType: "stdio" })
 
     console.error("Server started and listening")
   } catch (error) {

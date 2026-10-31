@@ -5,6 +5,7 @@ minimumReleaseAgeExclude:
   # pnpm's minimumReleaseAge cooldown. "*functype*" covers functype, functype-os,
   # and eslint-{config,plugin}-functype.
   - "*functype*"
+  - somamcp
   - ts-builds
 publicHoistPattern:
   - "*eslint*"
