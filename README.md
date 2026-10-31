@@ -25,7 +25,8 @@ Want to run it on your own machine, or keep your tokens local? Keep reading to s
 
 ## Features
 
-- **15 MCP Tools**: Complete task management functionality including lists, tasks, checklist items, and organization features
+- **16 MCP Tools**: Complete task management functionality including lists, tasks, checklist items, and organization features
+- **Recurring Tasks**: First-class support for Microsoft Graph `recurrence` (daily / weekly / absoluteMonthly / relativeMonthly / absoluteYearly / relativeYearly) on `create-task` and `update-task`
 - **Seamless Authentication**: Automatic token refresh with zero manual intervention
 - **OAuth 2.0 Authentication**: Secure authentication with automatic token refresh
 - **Microsoft Graph API Integration**: Direct integration with Microsoft's official API
@@ -236,7 +237,7 @@ pnpm run typecheck    # TypeScript type checking
 
 ## MCP Tools
 
-The server provides 13 tools for comprehensive Microsoft To Do management:
+The server provides 16 tools for comprehensive Microsoft To Do management:
 
 ### Authentication
 
@@ -253,11 +254,48 @@ The server provides 13 tools for comprehensive Microsoft To Do management:
 
 - **`get-tasks`** - Get tasks from a list with filtering, sorting, and pagination
   - Supports OData query parameters: `$filter`, `$orderby`, `$top`, `$skip`, `$count`
-  - `select` limits which fields print (`status`, `dueDateTime`, `importance`, `categories`, `body`); it is applied by the server, not sent to Graph
+  - `select` limits which fields print (`status`, `dueDateTime`, `importance`, `categories`, `recurrence`, `body`); it is applied by the server, not sent to Graph
 - **`create-task`** - Create a new task with full property support
-  - Title, description, due date, start date, importance, reminders, status, categories
-- **`update-task`** - Update any task properties
+  - Title, description, due date, start date, importance, reminders, status, categories, **recurrence**
+- **`update-task`** - Update any task properties including **recurrence** (pass `null` to stop a recurring task)
 - **`delete-task`** - Delete a task and all its checklist items
+
+### Recurring Tasks
+
+Pass a `recurrence` object to `create-task` or `update-task` to make a task repeat.
+Recurrence derives its first occurrence from the task's `dueDateTime`, which is
+required. Examples:
+
+```json
+// Monthly bill, 15th of every month, forever
+{
+  "pattern": {"type": "absoluteMonthly", "interval": 1, "dayOfMonth": 15},
+  "range":   {"type": "noEnd"}
+}
+
+// Weekly standup every Monday, ends 2027-01-01
+{
+  "pattern": {"type": "weekly", "interval": 1, "daysOfWeek": ["monday"]},
+  "range":   {"type": "endDate", "endDate": "2027-01-01"}
+}
+
+// Annual birthday, on the 4th of September
+{
+  "pattern": {"type": "absoluteYearly", "interval": 1, "dayOfMonth": 4, "month": 9},
+  "range":   {"type": "noEnd"}
+}
+```
+
+Each pattern type needs its own fields, and the server refuses a rule that leaves one
+out or adds one the type does not use: `weekly` and `relativeMonthly` take `daysOfWeek`,
+`absoluteMonthly` takes `dayOfMonth`, `absoluteYearly` takes `dayOfMonth` and `month`,
+and `relativeYearly` takes `daysOfWeek` and `month`. A `weekly` rule without
+`firstDayOfWeek` gets `sunday`. An `endDate` range needs `endDate`, and a `numbered`
+range needs `numberOfOccurrences`.
+
+Stop a recurring task by passing `recurrence: null` to `update-task`. See
+<https://learn.microsoft.com/en-us/graph/api/resources/recurrencepattern> for
+the full schema.
 
 ### Checklist Items (Subtasks)
 

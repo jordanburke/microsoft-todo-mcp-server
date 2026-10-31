@@ -18,7 +18,8 @@ const MS_GRAPH_BASE = "https://graph.microsoft.com/v1.0"
 const USER_AGENT = "microsoft-todo-mcp-server/1.0"
 
 // Create server instance
-const server = new McpServer({
+// Exported so specs can drive the tools in-process, without a build or a stdio child.
+export const server = new McpServer({
   name: "mstodo",
   version: "1.0.0",
 })
@@ -302,6 +303,141 @@ interface Task {
     contentType: string
   }
   categories?: string[]
+  recurrence?: {
+    pattern: {
+      type: string
+      interval: number
+      month?: number
+      dayOfMonth?: number
+      daysOfWeek?: string[]
+      firstDayOfWeek?: string
+      index?: string
+    }
+    range: {
+      type: string
+      startDate?: string
+      endDate?: string
+      numberOfOccurrences?: number
+      recurrenceTimeZone?: string
+    }
+  }
+}
+
+// Zod schemas for recurrence input. The MCP exposes a friendly nested shape;
+// see https://learn.microsoft.com/en-us/graph/api/resources/recurrencepattern
+const recurrencePatternSchema = z.object({
+  type: z
+    .enum(["daily", "weekly", "absoluteMonthly", "relativeMonthly", "absoluteYearly", "relativeYearly"])
+    .describe(
+      "Recurrence pattern type. daily | weekly | absoluteMonthly (e.g. 15th of every N months) | relativeMonthly (e.g. 2nd Tuesday of every N months) | absoluteYearly | relativeYearly.",
+    ),
+  interval: z
+    .number()
+    .int()
+    .min(1)
+    .max(255)
+    .describe("How often the pattern repeats (1 = every period, 2 = every second, ...)."),
+  month: z.number().int().min(1).max(12).optional().describe("Month for absoluteYearly / relativeYearly (1-12)."),
+  dayOfMonth: z.number().int().min(1).max(31).optional().describe("Day of month for absoluteMonthly / absoluteYearly."),
+  daysOfWeek: z
+    .array(z.enum(["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"]))
+    .optional()
+    .describe("Days of week for weekly / relativeMonthly / relativeYearly."),
+  firstDayOfWeek: z
+    .enum(["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"])
+    .optional()
+    .describe("Which day is the start of the week (defaults to sunday)."),
+  index: z
+    .enum(["first", "second", "third", "fourth", "last"])
+    .optional()
+    .describe("Ordinal position for relativeMonthly / relativeYearly (e.g. 'second' Tuesday)."),
+})
+
+const recurrenceRangeSchema = z.object({
+  type: z
+    .enum(["endDate", "noEnd", "numbered"])
+    .describe(
+      "How long the recurrence repeats: endDate (stops at endDate), noEnd (forever), numbered (stops after N occurrences).",
+    ),
+  startDate: z
+    .string()
+    .optional()
+    .describe("Required for endDate/numbered; ISO date YYYY-MM-DD. Defaults to the task due date if omitted."),
+  endDate: z.string().optional().describe("Required when type=endDate; ISO date YYYY-MM-DD."),
+  numberOfOccurrences: z
+    .number()
+    .int()
+    .min(1)
+    .optional()
+    .describe("Required when type=numbered; how many occurrences before stopping."),
+  recurrenceTimeZone: z
+    .string()
+    .optional()
+    .describe("IANA timezone for the recurrence (e.g. 'Asia/Kolkata'). Defaults to the task due-date timezone."),
+})
+
+const recurrenceSchema = z
+  .object({
+    pattern: recurrencePatternSchema,
+    range: recurrenceRangeSchema,
+  })
+  .describe(
+    "Recurrence rule. Omit to leave the task one-off. To stop an existing recurring task, set recurrence to null via update-task.",
+  )
+
+type RecurrenceInput = z.infer<typeof recurrenceSchema>
+
+// Which optional fields each pattern and range type requires and accepts, per
+// https://learn.microsoft.com/en-us/graph/api/resources/recurrencepattern and
+// .../recurrencerange. Graph rejects a missing required field and any field the type
+// does not use, with a 400 that names neither, so the server checks before sending.
+// firstDayOfWeek is required for weekly but defaults to sunday (see toGraphRecurrence).
+const PATTERN_FIELDS: Record<string, { required: string[]; allowed: string[] }> = {
+  daily: { required: [], allowed: [] },
+  weekly: { required: ["daysOfWeek"], allowed: ["daysOfWeek", "firstDayOfWeek"] },
+  absoluteMonthly: { required: ["dayOfMonth"], allowed: ["dayOfMonth"] },
+  relativeMonthly: { required: ["daysOfWeek"], allowed: ["daysOfWeek", "index"] },
+  absoluteYearly: { required: ["dayOfMonth", "month"], allowed: ["dayOfMonth", "month"] },
+  relativeYearly: { required: ["daysOfWeek", "month"], allowed: ["daysOfWeek", "month", "index"] },
+}
+const RANGE_FIELDS: Record<string, { required: string[]; allowed: string[] }> = {
+  noEnd: { required: [], allowed: [] },
+  endDate: { required: ["endDate"], allowed: ["endDate"] },
+  numbered: { required: ["numberOfOccurrences"], allowed: ["numberOfOccurrences"] },
+}
+const PATTERN_OPTIONAL = ["month", "dayOfMonth", "daysOfWeek", "firstDayOfWeek", "index"] as const
+const RANGE_OPTIONAL = ["endDate", "numberOfOccurrences"] as const
+
+// The first rule the recurrence breaks, as a message for the caller, or null if none.
+function recurrenceProblem({ pattern, range }: RecurrenceInput): string | null {
+  const check = (
+    kind: string,
+    type: string,
+    value: Record<string, unknown>,
+    fields: { required: string[]; allowed: string[] },
+    optional: readonly string[],
+  ): string | null => {
+    const missing = fields.required.filter(
+      (f) => value[f] === undefined || (Array.isArray(value[f]) && !value[f].length),
+    )
+    if (missing.length) return `A ${type} ${kind} needs ${missing.join(" and ")}.`
+    const extra = optional.filter((f) => value[f] !== undefined && !fields.allowed.includes(f))
+    if (extra.length) return `A ${type} ${kind} does not take ${extra.join(" or ")}; Microsoft Graph rejects it.`
+    return null
+  }
+  return (
+    check("pattern", pattern.type, pattern, PATTERN_FIELDS[pattern.type], PATTERN_OPTIONAL) ??
+    check("range", range.type, range, RANGE_FIELDS[range.type], RANGE_OPTIONAL)
+  )
+}
+
+// The Graph body for a checked recurrence. range.startDate defaults to the due date's
+// calendar day, and a weekly pattern gets firstDayOfWeek, which Graph requires for it.
+function toGraphRecurrence({ pattern, range }: RecurrenceInput, dueISO: string): RecurrenceInput {
+  return {
+    pattern: pattern.type === "weekly" ? { firstDayOfWeek: "sunday", ...pattern } : { ...pattern },
+    range: { ...range, startDate: range.startDate ?? dueISO.substring(0, 10) },
+  }
 }
 
 interface ChecklistItem {
@@ -838,7 +974,7 @@ server.tool(
       .string()
       .optional()
       .describe(
-        "Comma-separated subset of the shown fields to include: status, dueDateTime, importance, categories, body (e.g., 'status,dueDateTime'). id and title are always included; other names are ignored.",
+        "Comma-separated subset of the shown fields to include: status, dueDateTime, importance, categories, recurrence, body (e.g., 'status,dueDateTime'). id and title are always included; other names are ignored.",
       ),
     orderby: z.string().optional().describe("Property to sort by (e.g., 'createdDateTime desc')"),
     top: z.number().optional().describe("Maximum number of tasks to retrieve"),
@@ -907,7 +1043,7 @@ server.tool(
       }
 
       // Client-side stand-in for $select (see above). No list means everything. ID and Title
-      // always print; status, dueDateTime, importance, categories and body print only when
+      // always print; status, dueDateTime, importance, categories, recurrence and body print only when
       // named. Any other name is ignored.
       const wanted = select
         ? new Set(
@@ -943,6 +1079,34 @@ server.tool(
         // Add categories if available
         if (want("categories") && task.categories && task.categories.length > 0) {
           taskInfo += `\nCategories: ${task.categories.join(", ")}`
+        }
+
+        // Add recurrence if available
+        if (want("recurrence") && task.recurrence) {
+          const r = task.recurrence
+          const interval = r.pattern.interval > 1 ? `every ${r.pattern.interval}` : "every"
+          const typeNice = r.pattern.type
+            .replace(/([A-Z])/g, " $1")
+            .trim()
+            .toLowerCase()
+          let humanPattern = `${interval} ${typeNice}`
+          if (
+            r.pattern.type === "weekly" ||
+            r.pattern.type === "relativeMonthly" ||
+            r.pattern.type === "relativeYearly"
+          ) {
+            if (r.pattern.daysOfWeek && r.pattern.daysOfWeek.length > 0) {
+              const idx = r.pattern.index ? `${r.pattern.index} ` : ""
+              humanPattern += ` on the ${idx}${r.pattern.daysOfWeek.join("/")}`
+            }
+          } else if (r.pattern.type === "absoluteMonthly" || r.pattern.type === "absoluteYearly") {
+            if (r.pattern.dayOfMonth) humanPattern += ` on day ${r.pattern.dayOfMonth}`
+            if (r.pattern.month) humanPattern += ` of month ${r.pattern.month}`
+          }
+          let rangeStr = r.range.type
+          if (r.range.endDate && r.range.endDate !== "0001-01-01") rangeStr += ` until ${r.range.endDate}`
+          if (r.range.numberOfOccurrences) rangeStr += `, ${r.range.numberOfOccurrences}x`
+          taskInfo += `\nRepeats: ${humanPattern} (range: ${rangeStr})`
         }
 
         // Add body content if available and not empty
@@ -987,7 +1151,7 @@ server.tool(
 
 server.tool(
   "create-task",
-  "Create a new task in a specific Microsoft Todo list. A task is the main todo item that can have a title, description, due date, and other properties.",
+  "Create a new task in a specific Microsoft Todo list. A task is the main todo item that can have a title, description, due date, and other properties. Pass `recurrence` to make the task repeat (e.g. monthly bill payments, birthdays, weekly reviews).",
   {
     listId: z.string().describe("ID of the task list"),
     title: z.string().describe("Title of the task"),
@@ -1002,6 +1166,11 @@ server.tool(
       .optional()
       .describe("Status of the task"),
     categories: z.array(z.string()).optional().describe("Categories associated with the task"),
+    recurrence: recurrenceSchema
+      .optional()
+      .describe(
+        "Recurrence rule. Omit for a one-off task. Requires `dueDateTime` to be set (the recurrence derives its first occurrence from it).",
+      ),
   },
   async ({
     listId,
@@ -1014,6 +1183,7 @@ server.tool(
     reminderDateTime,
     status,
     categories,
+    recurrence,
   }) => {
     try {
       const token = await getAccessToken()
@@ -1076,6 +1246,24 @@ server.tool(
         taskBody.categories = categories
       }
 
+      if (recurrence) {
+        const problem = recurrenceProblem(recurrence)
+        if (problem) {
+          return { content: [{ type: "text", text: `Recurrence not set: ${problem}` }] }
+        }
+        if (!dueDateTime) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: "Cannot create a recurring task without a dueDateTime — Microsoft Graph derives the first occurrence from the due date.",
+              },
+            ],
+          }
+        }
+        taskBody.recurrence = toGraphRecurrence(recurrence, dueDateTime)
+      }
+
       const response = await makeGraphRequest<Task>(
         `${MS_GRAPH_BASE}/me/todo/lists/${listId}/tasks`,
         token,
@@ -1088,17 +1276,21 @@ server.tool(
           content: [
             {
               type: "text",
-              text: `Failed to create task in list: ${listId}`,
+              text: `Failed to create task in list: ${listId}: ${lastGraphError ?? "unknown error"}`,
             },
           ],
         }
       }
 
+      const recurrenceInfo = response.recurrence
+        ? `\nRepeats: ${response.recurrence.pattern.type} (interval ${response.recurrence.pattern.interval}); range ${response.recurrence.range.type}`
+        : ""
+
       return {
         content: [
           {
             type: "text",
-            text: `Task created successfully!\nID: ${response.id}\nTitle: ${response.title}`,
+            text: `Task created successfully!\nID: ${response.id}\nTitle: ${response.title}${recurrenceInfo}`,
           },
         ],
       }
@@ -1117,7 +1309,7 @@ server.tool(
 
 server.tool(
   "update-task",
-  "Update an existing task in Microsoft Todo. Allows changing any properties of the task including title, due date, importance, etc.",
+  "Update an existing task in Microsoft Todo. Allows changing any properties of the task including title, due date, importance, and recurrence. To stop a recurring task, pass `recurrence: null`. Pass a new `recurrence` object to change or add recurrence.",
   {
     listId: z.string().describe("ID of the task list"),
     taskId: z.string().describe("ID of the task to update"),
@@ -1133,6 +1325,12 @@ server.tool(
       .optional()
       .describe("New status of the task"),
     categories: z.array(z.string()).optional().describe("New categories associated with the task"),
+    recurrence: z
+      .union([recurrenceSchema, z.null()])
+      .optional()
+      .describe(
+        "New recurrence rule for the task. Pass an object to set/change recurrence. Pass `null` to make the task one-off (clears any existing recurrence). Omit to leave recurrence untouched.",
+      ),
   },
   async ({
     listId,
@@ -1146,6 +1344,7 @@ server.tool(
     reminderDateTime,
     status,
     categories,
+    recurrence,
   }) => {
     try {
       const token = await getAccessToken()
@@ -1227,6 +1426,52 @@ server.tool(
         taskBody.categories = categories
       }
 
+      if (recurrence !== undefined) {
+        if (recurrence === null) {
+          // Caller asked to clear any existing recurrence
+          taskBody.recurrence = null
+        } else {
+          const problem = recurrenceProblem(recurrence)
+          if (problem) {
+            return { content: [{ type: "text", text: `Recurrence not set: ${problem}` }] }
+          }
+          // Graph derives the first occurrence from the due date, and range.startDate
+          // defaults to it. Use the due date this call sets, or else the one the task
+          // already has. Clearing the due date in the same call leaves none.
+          let dueISO: string | undefined
+          if (dueDateTime !== undefined) {
+            dueISO = dueDateTime || undefined
+          } else {
+            const existing = await makeGraphRequest<Task>(
+              `${MS_GRAPH_BASE}/me/todo/lists/${listId}/tasks/${taskId}`,
+              token,
+            )
+            if (!existing) {
+              return {
+                content: [
+                  {
+                    type: "text",
+                    text: `Failed to read the task's current due date: ${lastGraphError ?? "unknown error"}`,
+                  },
+                ],
+              }
+            }
+            dueISO = existing.dueDateTime?.dateTime
+          }
+          if (!dueISO) {
+            return {
+              content: [
+                {
+                  type: "text",
+                  text: "Cannot set recurrence without a dueDateTime — pass dueDateTime in this update or set one on the task first.",
+                },
+              ],
+            }
+          }
+          taskBody.recurrence = toGraphRecurrence(recurrence, dueISO)
+        }
+      }
+
       // Make sure we have at least one property to update
       if (Object.keys(taskBody).length === 0) {
         return {
@@ -1251,7 +1496,7 @@ server.tool(
           content: [
             {
               type: "text",
-              text: `Failed to update task with ID: ${taskId} in list: ${listId}`,
+              text: `Failed to update task with ID: ${taskId} in list: ${listId}: ${lastGraphError ?? "unknown error"}`,
             },
           ],
         }
