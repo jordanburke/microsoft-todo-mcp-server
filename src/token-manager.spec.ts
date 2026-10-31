@@ -160,3 +160,46 @@ describe("environment token pair", () => {
     expect(second?.accessToken).toBe("renewed-once")
   })
 })
+
+describe("refreshRejectedToken", () => {
+  // An opaque seed minted on an earlier day sits inside its assumed hour, so getTokens()
+  // hands it back unrefreshed. Only Graph's 401 shows it is dead.
+  beforeEach(() => {
+    process.env.MS_TODO_ACCESS_TOKEN = "opaque-stale-seed"
+    process.env.MS_TODO_REFRESH_TOKEN = "env-refresh"
+  })
+
+  it("refreshes a token Graph rejected even though it still looks valid", async () => {
+    const fetchMock = stubRefresh("renewed-after-401")
+    const manager = new TokenManager()
+
+    expect((await manager.getTokens())?.accessToken).toBe("opaque-stale-seed")
+    expect(fetchMock).not.toHaveBeenCalled()
+
+    const refreshed = await manager.refreshRejectedToken("opaque-stale-seed")
+
+    expect(refreshed?.accessToken).toBe("renewed-after-401")
+    expect(refreshTokenSentOn(fetchMock, 0)).toBe("env-refresh")
+    expect((await manager.getTokens())?.accessToken).toBe("renewed-after-401")
+  })
+
+  it("does not refresh again when another request already replaced the rejected token", async () => {
+    const fetchMock = stubRefresh("renewed-after-401")
+    const manager = new TokenManager()
+    await manager.refreshRejectedToken("opaque-stale-seed")
+
+    const second = await manager.refreshRejectedToken("opaque-stale-seed")
+
+    expect(fetchMock).toHaveBeenCalledOnce()
+    expect(second?.accessToken).toBe("renewed-after-401")
+  })
+
+  it("returns null when the refresh fails", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => Response.json({ error: "invalid_grant" }, { status: 400 })),
+    )
+
+    expect(await new TokenManager().refreshRejectedToken("opaque-stale-seed")).toBeNull()
+  })
+})
