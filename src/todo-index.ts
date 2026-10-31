@@ -229,7 +229,7 @@ server.tool(
         content: [
           {
             type: "text",
-            text: "Not authenticated. Please run 'npx microsoft-todo-mcp-server setup' to authenticate with Microsoft.",
+            text: "Not authenticated. Please run 'mstodo-setup' (or 'npx -p microsoft-todo-mcp-server mstodo-setup') to authenticate with Microsoft.",
           },
         ],
       }
