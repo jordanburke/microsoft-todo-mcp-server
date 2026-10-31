@@ -146,6 +146,20 @@ export class TokenManager {
     return null
   }
 
+  // A 401 proves the access token is dead, whatever its recorded expiry says. Personal
+  // accounts get opaque tokens whose expiry can only be assumed, so an environment seed
+  // minted on an earlier day still looks valid for its first hour in this process, and
+  // getTokens() would hand the same dead token straight back. Refresh it now instead.
+  async refreshRejectedToken(rejectedAccessToken: string): Promise<TokenData | null> {
+    const live = this.currentTokens ?? this.readEnvTokens()
+    if (!live) return null
+
+    // Another request already replaced the token this one was sent with.
+    if (live.accessToken !== rejectedAccessToken) return live
+
+    return this.refreshToken(live.refreshToken)
+  }
+
   async refreshToken(refreshToken: string): Promise<TokenData | null> {
     try {
       // Get client credentials from stored tokens or environment

@@ -60,10 +60,10 @@ async function makeGraphRequest<T>(url: string, token: string, method = "GET", b
     lastGraphError = null
     let response = await fetch(url, options)
 
-    // If we get a 401, try to refresh the token and retry once
+    // If we get a 401, refresh the token and retry once
     if (response.status === 401) {
       console.error("Got 401, attempting token refresh...")
-      const newToken = await getAccessToken() // This will trigger refresh
+      const newToken = (await tokenManager.refreshRejectedToken(token))?.accessToken
       if (newToken && newToken !== token) {
         // Retry with new token
         headers.Authorization = `Bearer ${newToken}`
