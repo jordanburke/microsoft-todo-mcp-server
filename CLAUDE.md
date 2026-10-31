@@ -31,6 +31,21 @@ pnpm run cli         # Run MCP server via CLI wrapper
 pnpm start           # Run MCP server directly
 ```
 
+### Live Smoke (before/after comparison)
+
+```bash
+pnpm run build && node scripts/smoke-live.mjs --label <name>   # writes .smoke/<name>.json
+node scripts/smoke-live.mjs --compare <a> <b>                  # diff two snapshots; exit 1 if any differ
+```
+
+Drives every tool over stdio against the real account in `tokens.json`. Writes stay inside two
+temporary "MCP smoke … (safe to delete)" lists, deleted at the end; existing lists are read for
+shape only (counts, which fields print). `--cmd "<command>"` runs a different server entry point.
+`.smoke/` is gitignored because snapshots hold account data. Two runs of the same build compare
+clean, so any diff is a behaviour change (or, for steps marked real data, the account changed).
+The baseline for the somamcp migration is `.smoke/v1.2.0-before-somamcp.json`, recorded on
+v1.2.0 (98f79e9). Graph rejects `$orderby=title` on tasks, so the harness orders by `createdDateTime`.
+
 ## ts-builds & pnpm 12 Notes
 
 Built with **ts-builds 4.0.2** (tsdown, vitest 5) on **pnpm 12**. Non-obvious, load-bearing constraints:
