@@ -94,7 +94,7 @@ describe("create-task recurrence", () => {
       pattern: { type: "absoluteMonthly", interval: 1, dayOfMonth: 15 },
       range: { type: "noEnd", startDate: "2026-11-15" },
     })
-    expect(text).toContain("Repeats: absoluteMonthly")
+    expect(text).toContain("Repeats: every absolute monthly on day 15 (range: noEnd)")
   })
 
   it("refuses a rule without a due date and sends nothing", async () => {
@@ -153,7 +153,7 @@ describe("get-tasks recurrence display", () => {
   })
 })
 
-describe("recurrence rules Graph would reject", () => {
+describe("recurrence rules the server refuses", () => {
   const create = (recurrence: Record<string, unknown>): Promise<string> =>
     callTool("create-task", { listId: "L1", title: "Rent", dueDateTime: "2026-11-15T09:00:00Z", recurrence })
 
@@ -180,7 +180,7 @@ describe("recurrence rules Graph would reject", () => {
       "weekly with dayOfMonth",
       { type: "weekly", interval: 1, daysOfWeek: ["monday"], dayOfMonth: 3 },
       { type: "noEnd" },
-      "does not take dayOfMonth",
+      "does not use dayOfMonth",
     ],
     ["endDate range without endDate", { type: "daily", interval: 1 }, { type: "endDate" }, "needs endDate"],
     [
@@ -193,7 +193,7 @@ describe("recurrence rules Graph would reject", () => {
       "noEnd range with an endDate",
       { type: "daily", interval: 1 },
       { type: "noEnd", endDate: "2027-01-01" },
-      "does not take endDate",
+      "does not use endDate",
     ],
   ])("refuses %s before sending anything", async (_name, pattern, range, message) => {
     const text = await create({ pattern, range })
@@ -214,7 +214,7 @@ describe("recurrence rules Graph would reject", () => {
     expect(calls).toHaveLength(0)
   })
 
-  it("gives a weekly rule firstDayOfWeek, which Graph requires", async () => {
+  it("gives a weekly rule firstDayOfWeek, which the docs list as required", async () => {
     respond = ({ body }) => ({ id: "T1", title: "Standup", recurrence: body?.recurrence })
 
     await create({ pattern: { type: "weekly", interval: 1, daysOfWeek: ["monday"] }, range: { type: "noEnd" } })
@@ -235,5 +235,41 @@ describe("recurrence rules Graph would reject", () => {
 
     expect(text).toContain("Failed to create task in list: L1")
     expect(text).toContain("Invalid recurrence pattern")
+  })
+})
+
+describe("Repeats line on what Graph returns", () => {
+  // Graph fills every field on read, whatever the type; these shapes are from a live account.
+  const stored = (pattern: Record<string, unknown>, range: Record<string, unknown>) => ({
+    pattern: { month: 0, dayOfMonth: 0, daysOfWeek: [], firstDayOfWeek: "sunday", index: "first", ...pattern },
+    range: {
+      startDate: "2026-11-20",
+      endDate: "0001-01-01",
+      recurrenceTimeZone: "UTC",
+      numberOfOccurrences: 0,
+      ...range,
+    },
+  })
+
+  it.each([
+    [
+      { type: "weekly", interval: 2, daysOfWeek: ["friday"] },
+      { type: "numbered", endDate: "2027-01-15", numberOfOccurrences: 5 },
+      "every 2 weekly on friday (range: numbered, 5x, ends 2027-01-15)",
+    ],
+    [
+      { type: "relativeMonthly", interval: 1, daysOfWeek: ["tuesday"], index: "second" },
+      { type: "noEnd" },
+      "every relative monthly on the second tuesday (range: noEnd)",
+    ],
+    [
+      { type: "absoluteYearly", interval: 1, dayOfMonth: 4, month: 9 },
+      { type: "endDate", endDate: "2030-09-04" },
+      "every absolute yearly on day 4 of month 9 (range: endDate until 2030-09-04)",
+    ],
+  ])("renders %j", async (pattern, range, expected) => {
+    respond = () => ({ value: [{ id: "T1", title: "x", recurrence: stored(pattern, range) }] })
+
+    expect(await callTool("get-tasks", { listId: "L1", select: "recurrence" })).toContain(`Repeats: ${expected}`)
   })
 })

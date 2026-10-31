@@ -373,7 +373,9 @@ const recurrenceRangeSchema = z.object({
   recurrenceTimeZone: z
     .string()
     .optional()
-    .describe("IANA timezone for the recurrence (e.g. 'Asia/Kolkata'). Defaults to the task due-date timezone."),
+    .describe(
+      "IANA timezone for the recurrence. In one live test Microsoft To Do stored 'Asia/Kolkata' as UTC, and it keeps only the due date's day, not its time.",
+    ),
 })
 
 const recurrenceSchema = z
@@ -389,9 +391,11 @@ type RecurrenceInput = z.infer<typeof recurrenceSchema>
 
 // Which optional fields each pattern and range type requires and accepts, per
 // https://learn.microsoft.com/en-us/graph/api/resources/recurrencepattern and
-// .../recurrencerange. Graph rejects a missing required field and any field the type
-// does not use, with a 400 that names neither, so the server checks before sending.
-// firstDayOfWeek is required for weekly but defaults to sunday (see toGraphRecurrence).
+// .../recurrencerange. Graph answers a missing required field with a 400 that names no
+// field, so the server checks before sending. Against a live account, Graph silently
+// dropped a field the type does not use (dayOfMonth on weekly, firstDayOfWeek on
+// relativeMonthly) instead of the documented error, so those are refused too: the
+// caller would otherwise believe the field took effect.
 const PATTERN_FIELDS: Record<string, { required: string[]; allowed: string[] }> = {
   daily: { required: [], allowed: [] },
   weekly: { required: ["daysOfWeek"], allowed: ["daysOfWeek", "firstDayOfWeek"] },
@@ -422,7 +426,7 @@ function recurrenceProblem({ pattern, range }: RecurrenceInput): string | null {
     )
     if (missing.length) return `A ${type} ${kind} needs ${missing.join(" and ")}.`
     const extra = optional.filter((f) => value[f] !== undefined && !fields.allowed.includes(f))
-    if (extra.length) return `A ${type} ${kind} does not take ${extra.join(" or ")}; Microsoft Graph rejects it.`
+    if (extra.length) return `A ${type} ${kind} does not use ${extra.join(" or ")}; leave it out.`
     return null
   }
   return (
@@ -432,12 +436,42 @@ function recurrenceProblem({ pattern, range }: RecurrenceInput): string | null {
 }
 
 // The Graph body for a checked recurrence. range.startDate defaults to the due date's
-// calendar day, and a weekly pattern gets firstDayOfWeek, which Graph requires for it.
+// calendar day. A weekly pattern gets firstDayOfWeek, which the docs list as required
+// for weekly; Graph defaulted it to sunday in live testing, so this matches either way.
 function toGraphRecurrence({ pattern, range }: RecurrenceInput, dueISO: string): RecurrenceInput {
   return {
     pattern: pattern.type === "weekly" ? { firstDayOfWeek: "sunday", ...pattern } : { ...pattern },
     range: { ...range, startDate: range.startDate ?? dueISO.substring(0, 10) },
   }
+}
+
+// A stored recurrence as one readable line, e.g. "every 2 weekly on friday (range: numbered, 5x, ends 2027-01-15)".
+// Graph fills every field on read (index "first", endDate "0001-01-01", zeros), so only the
+// fields the pattern type uses are shown.
+function formatRecurrence({ pattern, range }: NonNullable<Task["recurrence"]>): string {
+  const every = pattern.interval > 1 ? `every ${pattern.interval}` : "every"
+  let text = `${every} ${pattern.type
+    .replace(/([A-Z])/g, " $1")
+    .trim()
+    .toLowerCase()}`
+  const relative = pattern.type === "relativeMonthly" || pattern.type === "relativeYearly"
+  if ((pattern.type === "weekly" || relative) && pattern.daysOfWeek?.length) {
+    text += ` on ${relative && pattern.index ? `the ${pattern.index} ` : ""}${pattern.daysOfWeek.join("/")}`
+  }
+  if ((pattern.type === "absoluteMonthly" || pattern.type === "absoluteYearly") && pattern.dayOfMonth) {
+    text += ` on day ${pattern.dayOfMonth}`
+  }
+  if ((pattern.type === "absoluteYearly" || pattern.type === "relativeYearly") && pattern.month) {
+    text += ` of month ${pattern.month}`
+  }
+  let rangeText = range.type
+  if (range.type === "endDate" && range.endDate) rangeText += ` until ${range.endDate}`
+  if (range.type === "numbered" && range.numberOfOccurrences) {
+    rangeText += `, ${range.numberOfOccurrences}x`
+    // Graph computes the last occurrence's date for a numbered range; show it when present.
+    if (range.endDate && range.endDate !== "0001-01-01") rangeText += `, ends ${range.endDate}`
+  }
+  return `${text} (range: ${rangeText})`
 }
 
 interface ChecklistItem {
@@ -1083,30 +1117,7 @@ server.tool(
 
         // Add recurrence if available
         if (want("recurrence") && task.recurrence) {
-          const r = task.recurrence
-          const interval = r.pattern.interval > 1 ? `every ${r.pattern.interval}` : "every"
-          const typeNice = r.pattern.type
-            .replace(/([A-Z])/g, " $1")
-            .trim()
-            .toLowerCase()
-          let humanPattern = `${interval} ${typeNice}`
-          if (
-            r.pattern.type === "weekly" ||
-            r.pattern.type === "relativeMonthly" ||
-            r.pattern.type === "relativeYearly"
-          ) {
-            if (r.pattern.daysOfWeek && r.pattern.daysOfWeek.length > 0) {
-              const idx = r.pattern.index ? `${r.pattern.index} ` : ""
-              humanPattern += ` on the ${idx}${r.pattern.daysOfWeek.join("/")}`
-            }
-          } else if (r.pattern.type === "absoluteMonthly" || r.pattern.type === "absoluteYearly") {
-            if (r.pattern.dayOfMonth) humanPattern += ` on day ${r.pattern.dayOfMonth}`
-            if (r.pattern.month) humanPattern += ` of month ${r.pattern.month}`
-          }
-          let rangeStr = r.range.type
-          if (r.range.endDate && r.range.endDate !== "0001-01-01") rangeStr += ` until ${r.range.endDate}`
-          if (r.range.numberOfOccurrences) rangeStr += `, ${r.range.numberOfOccurrences}x`
-          taskInfo += `\nRepeats: ${humanPattern} (range: ${rangeStr})`
+          taskInfo += `\nRepeats: ${formatRecurrence(task.recurrence)}`
         }
 
         // Add body content if available and not empty
@@ -1282,9 +1293,7 @@ server.tool(
         }
       }
 
-      const recurrenceInfo = response.recurrence
-        ? `\nRepeats: ${response.recurrence.pattern.type} (interval ${response.recurrence.pattern.interval}); range ${response.recurrence.range.type}`
-        : ""
+      const recurrenceInfo = response.recurrence ? `\nRepeats: ${formatRecurrence(response.recurrence)}` : ""
 
       return {
         content: [
