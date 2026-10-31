@@ -7,17 +7,27 @@
 //   node scripts/smoke-live.mjs --compare before after    # diff two snapshots
 //
 // Writes happen only inside two temporary lists ("MCP smoke … (safe to delete)"), which are
-// deleted at the end even if a step fails. Existing lists are only read, and what is kept
-// from them is shape (counts, which fields print), not titles. Snapshots hold list counts
-// and server output, so .smoke/ is gitignored. Tokens come from MSTODO_TOKEN_FILE
+// deleted at the end even if a step fails or the server dies; leftovers from an earlier
+// crashed run are found by name and deleted too. Existing lists are only read, and what is
+// kept from them is shape (counts, which fields print), not titles. Snapshots hold list
+// counts and server output, so .smoke/ is gitignored. Tokens come from MSTODO_TOKEN_FILE
 // (default ./tokens.json) and are never printed.
 
-import { spawn } from "node:child_process"
-import { execSync } from "node:child_process"
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs"
+import { execSync, spawn } from "node:child_process"
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { resolve } from "node:path"
 
+// One clock and locale for the harness and the server, so a run on another machine or near
+// midnight does not differ from the baseline in how dates print.
+process.env.TZ = "UTC"
+const LOCALE_ENV = { TZ: "UTC", LANG: "en_US.UTF-8", LC_ALL: "en_US.UTF-8" }
+
 const SNAPSHOT_DIR = resolve(".smoke")
+const SMOKE_NAMES = [
+  "MCP smoke A (safe to delete)",
+  "MCP smoke A renamed (safe to delete)",
+  "MCP smoke B (safe to delete)",
+]
 const args = process.argv.slice(2)
 const flag = (name) => {
   const i = args.indexOf(name)
@@ -27,22 +37,21 @@ const flag = (name) => {
 // ---------- normalization: strip what differs run to run, keep what differs build to build ----------
 
 const today = new Date()
-const pad = (n) => String(n).padStart(2, "0")
-const todayIso = `${today.getFullYear()}-${pad(today.getMonth() + 1)}-${pad(today.getDate())}`
-const todayUtcIso = today.toISOString().slice(0, 10)
-const todayLocale = today.toLocaleDateString()
+const todayIso = today.toISOString().slice(0, 10)
+const todayUs = today.toLocaleDateString("en-US", { timeZone: "UTC" })
 
 const normalize = (text) =>
   String(text)
     .replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, "<guid>")
-    .replace(/[A-Za-z0-9_-]{24,}={0,2}/g, "<id>")
+    // Graph IDs are long and contain digits; a long all-letter word (an error code such as
+    // MailboxNotEnabledForRESTAPI) is left alone so a change to it still shows.
+    .replace(/(?=[A-Za-z_-]*\d)[A-Za-z0-9_-]{24,}={0,2}/g, "<id>")
+    .replace(/(Token expires at )[^\n]*/g, "$1<when>")
     .replace(/T\d{2}:\d{2}:\d{2}(\.\d+)?Z?/g, "T<time>")
     .replace(/\b\d{1,2}:\d{2}:\d{2}( ?[AP]M)?/g, "<time>")
     .split(todayIso)
     .join("<today>")
-    .split(todayUtcIso)
-    .join("<today>")
-    .split(todayLocale)
+    .split(todayUs)
     .join("<today>")
 
 const sortKeys = (value) =>
@@ -80,41 +89,47 @@ const lineDiff = (a, b) => {
 
 if (args.includes("--compare")) {
   const [a, b] = args.slice(args.indexOf("--compare") + 1)
-  const load = (label) => JSON.parse(readFileSync(resolve(SNAPSHOT_DIR, `${label}.json`), "utf8"))
+  const load = (label) => {
+    const path = resolve(SNAPSHOT_DIR, `${label}.json`)
+    if (!label || !existsSync(path)) {
+      console.error(`no snapshot ${path}`)
+      process.exit(2)
+    }
+    return JSON.parse(readFileSync(path, "utf8"))
+  }
   const A = load(a)
   const B = load(b)
   console.log(`${a}: ${A.meta.git} ${A.meta.version} ${A.meta.date}`)
   console.log(`${b}: ${B.meta.git} ${B.meta.version} ${B.meta.date}\n`)
-  const sections = [
-    ["initialize", (s) => JSON.stringify(s.initialize, null, 2)],
-    ["tools", (s) => JSON.stringify(s.tools, null, 2)],
-  ]
-  let differences = 0
-  for (const [name, render] of sections) {
-    const d = lineDiff(render(A), render(B))
-    console.log(`${d.length ? "DIFF" : "same"}  ${name}`)
-    if (d.length) {
-      differences++
-      console.log(d.join("\n"))
-    }
+  let behaviour = 0
+  let realData = 0
+  const show = (name, ra, rb, isRealData) => {
+    const d = lineDiff(ra, rb)
+    console.log(
+      `${d.length ? "DIFF" : "same"}  ${name}${isRealData ? "  [real data: also changes when the account does]" : ""}`,
+    )
+    if (!d.length) return
+    console.log(d.join("\n"))
+    if (isRealData) realData++
+    else behaviour++
+  }
+  for (const section of ["initialize", "tools", "protocol"]) {
+    show(section, JSON.stringify(A[section] ?? null, null, 2), JSON.stringify(B[section] ?? null, null, 2), false)
   }
   const steps = [...new Set([...A.steps.map((s) => s.step), ...B.steps.map((s) => s.step)])]
   for (const step of steps) {
     const sa = A.steps.find((s) => s.step === step)
     const sb = B.steps.find((s) => s.step === step)
-    const ra = sa ? JSON.stringify(sa.result, null, 2) : "(missing)"
-    const rb = sb ? JSON.stringify(sb.result, null, 2) : "(missing)"
-    const d = lineDiff(ra, rb)
-    console.log(
-      `${d.length ? "DIFF" : "same"}  ${step}${sa?.realData ? "  [real data: may differ if the account changed]" : ""}`,
+    show(
+      step,
+      sa ? JSON.stringify(sa.result, null, 2) : "(missing)",
+      sb ? JSON.stringify(sb.result, null, 2) : "(missing)",
+      Boolean((sa ?? sb).realData),
     )
-    if (d.length) {
-      differences++
-      console.log(d.join("\n"))
-    }
   }
-  console.log(`\n${differences} section(s) differ.`)
-  process.exit(differences ? 1 : 0)
+  console.log(`\n${behaviour} behaviour section(s) differ; ${realData} real-data section(s) differ.`)
+  // Real-data drift alone is expected between runs days apart, so only behaviour fails the gate.
+  process.exit(behaviour ? 1 : 0)
 }
 
 // ---------- run mode ----------
@@ -126,60 +141,118 @@ if (!label) {
 }
 const command = (flag("--cmd") ?? "node dist/cli.js").split(" ")
 const tokenFile = resolve(process.env.MSTODO_TOKEN_FILE ?? "tokens.json")
+const protocol = { strayStdoutLines: 0, serverRequests: [], serverExitedEarly: false }
 
-const child = spawn(command[0], command.slice(1), {
-  env: { ...process.env, MSTODO_TOKEN_FILE: tokenFile },
-  stdio: ["pipe", "pipe", "pipe"],
-})
-let stderr = ""
-child.stderr.on("data", (d) => (stderr += d))
-let buffer = ""
-let nextId = 0
-const pending = new Map()
-child.stdout.on("data", (d) => {
-  buffer += d
-  let nl
-  while ((nl = buffer.indexOf("\n")) >= 0) {
-    const line = buffer.slice(0, nl)
-    buffer = buffer.slice(nl + 1)
-    if (!line.trim()) continue
-    const msg = JSON.parse(line)
-    pending.get(msg.id)?.(msg)
-  }
-})
-child.on("exit", (code) => {
-  for (const resolveCall of pending.values()) resolveCall({ error: { message: `server exited (${code})` } })
-})
-const rpc = (method, params) =>
-  new Promise((resolveCall) => {
-    const id = ++nextId
-    pending.set(id, resolveCall)
-    child.stdin.write(JSON.stringify({ jsonrpc: "2.0", id, method, params }) + "\n")
-    setTimeout(() => resolveCall({ error: { message: `timeout: ${method}` } }), 60_000)
+// A server over stdio. Never throws: a dead or silent server turns each call into an error
+// result, so the run always reaches cleanup.
+const connect = () => {
+  const child = spawn(command[0], command.slice(1), {
+    env: { ...process.env, ...LOCALE_ENV, MSTODO_TOKEN_FILE: tokenFile },
+    stdio: ["pipe", "pipe", "pipe"],
   })
+  const server = { stderr: "", exited: false, pending: new Map(), nextId: 0 }
+  child.stderr.on("data", (d) => (server.stderr += d))
+  child.on("error", (e) => (server.stderr += `spawn error: ${e.message}\n`))
+  let buffer = ""
+  child.stdout.on("data", (d) => {
+    buffer += d
+    let nl
+    while ((nl = buffer.indexOf("\n")) >= 0) {
+      const line = buffer.slice(0, nl)
+      buffer = buffer.slice(nl + 1)
+      if (!line.trim()) continue
+      let msg
+      try {
+        msg = JSON.parse(line)
+      } catch {
+        // Anything but JSON-RPC on stdout breaks real MCP clients, so it is counted.
+        protocol.strayStdoutLines++
+        process.stderr.write(`stray stdout: ${line.slice(0, 200)}\n`)
+        continue
+      }
+      // A server-initiated request or notification carries a method; its id is the
+      // server's own and must not resolve one of ours.
+      if (msg.method) {
+        if (msg.id !== undefined) protocol.serverRequests.push(msg.method)
+        continue
+      }
+      server.pending.get(msg.id)?.(msg)
+    }
+  })
+  child.on("exit", (code) => {
+    server.exited = true
+    for (const done of server.pending.values()) done({ error: { message: `server exited (${code})` } })
+    server.pending.clear()
+  })
+  server.rpc = (method, params) =>
+    new Promise((done) => {
+      if (server.exited) return done({ error: { message: "server not running" } })
+      const id = ++server.nextId
+      const timer = setTimeout(() => {
+        server.pending.delete(id)
+        done({ error: { message: `timeout: ${method}` } })
+      }, 60_000)
+      server.pending.set(id, (msg) => {
+        clearTimeout(timer)
+        server.pending.delete(id)
+        done(msg)
+      })
+      child.stdin.write(JSON.stringify({ jsonrpc: "2.0", id, method, params }) + "\n")
+    })
+  server.notify = (method) => !server.exited && child.stdin.write(JSON.stringify({ jsonrpc: "2.0", method }) + "\n")
+  server.kill = () => child.kill()
+  return server
+}
 
+const handshake = async (server) => {
+  const init = await server.rpc("initialize", {
+    protocolVersion: "2025-06-18",
+    capabilities: {},
+    clientInfo: { name: "smoke-live", version: "1" },
+  })
+  if (!init.error) server.notify("notifications/initialized")
+  return init
+}
+
+let server = connect()
 const steps = []
-const rawCall = async (tool, toolArgs) => {
-  const msg = await rpc("tools/call", { name: tool, arguments: toolArgs })
-  if (msg.error) return { error: msg.error.message, text: "" }
-  const content = msg.result?.content ?? []
+
+const callOn = async (srv, tool, toolArgs) => {
+  const msg = await srv.rpc("tools/call", { name: tool, arguments: toolArgs })
+  if (msg.error) {
+    return { error: msg.error.message, errorCode: msg.error.code, errorData: msg.error.data, text: "" }
+  }
+  const result = msg.result ?? {}
+  const content = result.content ?? []
   return {
-    isError: Boolean(msg.result?.isError),
-    contentTypes: content.map((c) => c.type),
+    isError: Boolean(result.isError),
+    resultKeys: Object.keys(result).sort(),
+    content: content.map((c) => ({ type: c.type, keys: Object.keys(c).sort() })),
+    structuredContent: result.structuredContent,
     text: content.map((c) => c.text ?? "").join("\n"),
   }
 }
-// Record a deterministic step: the full normalized text.
+const rawCall = (tool, toolArgs) => callOn(server, tool, toolArgs)
+const normalized = (r) => ({
+  ...r,
+  error: r.error && normalize(r.error),
+  errorData: r.errorData && JSON.parse(normalize(JSON.stringify(r.errorData))),
+  structuredContent: r.structuredContent && JSON.parse(normalize(JSON.stringify(r.structuredContent))),
+  text: normalize(r.text),
+})
+// Record a deterministic step: the full normalized result.
 const record = async (step, tool, toolArgs) => {
   const r = await rawCall(tool, toolArgs)
-  steps.push({ step, tool, result: { ...r, text: normalize(r.text) } })
+  steps.push({ step, tool, result: sortKeys(normalized(r)) })
   return r
 }
 // Record a real-data step: only its shape.
-const recordShape = (step, tool, shape) => steps.push({ step, tool, realData: true, result: shape })
+const recordShape = (step, tool, shape) => steps.push({ step, tool, realData: true, result: sortKeys(shape) })
 
-const idAfter = (text, label = "ID") => text.match(new RegExp(`${label}: (\\S+)`))?.[1]
-const countIds = (text) => (text.match(/ID: /g) ?? []).length
+const idAfter = (text) => text.match(/ID: (\S+)/)?.[1]
+// Task lines start with "ID:" (optionally after a status mark); "No tasks found in list
+// with ID: …" does not, so an empty list counts as zero.
+const countTasks = (text) => (text.match(/^(?:[✓○] )?ID: /gm) ?? []).length
 const fieldKinds = (text) => {
   const kinds = {}
   for (const line of text.split("\n")) {
@@ -188,7 +261,14 @@ const fieldKinds = (text) => {
       : line.match(/^(Due|Importance|Categories|Description|Repeats):/)?.[1]
     if (kind) kinds[kind] = (kinds[kind] ?? 0) + 1
   }
-  return sortKeys(kinds)
+  return kinds
+}
+// get-task-lists prints "ID: <id>\nName: <name>…" per list. Null when the listing failed,
+// so a failure is never mistaken for "the list is gone".
+const listLists = async (srv) => {
+  const r = await callOn(srv, "get-task-lists", {})
+  if (r.error || r.isError || !r.text.startsWith("Your task lists:")) return null
+  return [...r.text.matchAll(/ID: (\S+)\nName: ([^\n]*)/g)].map((m) => ({ id: m[1], name: m[2] }))
 }
 
 const git = (() => {
@@ -200,20 +280,14 @@ const git = (() => {
 })()
 const version = JSON.parse(readFileSync("package.json", "utf8")).version
 
-const init = await rpc("initialize", {
-  protocolVersion: "2025-06-18",
-  capabilities: {},
-  clientInfo: { name: "smoke-live", version: "1" },
-})
+const init = await handshake(server)
 if (init.error) {
-  console.error("initialize failed:", init.error.message, "\n", stderr.slice(-2000))
+  console.error("initialize failed:", init.error.message, "\n", server.stderr.slice(-2000))
+  server.kill()
   process.exit(1)
 }
-child.stdin.write(JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }) + "\n")
-const toolsMsg = await rpc("tools/list", {})
-const tools = sortKeys(
-  (toolsMsg.result?.tools ?? []).map((t) => ({ name: t.name, description: t.description, inputSchema: t.inputSchema })),
-).sort((a, b) => a.name.localeCompare(b.name))
+const toolsMsg = await server.rpc("tools/list", {})
+const tools = sortKeys(toolsMsg.result?.tools ?? []).sort((a, b) => a.name.localeCompare(b.name))
 
 let listA
 let listB
@@ -222,15 +296,12 @@ try {
   await record("auth-status", "auth-status", {})
 
   // --- temporary lists
-  const a = await record("create-task-list A", "create-task-list", { displayName: "MCP smoke A (safe to delete)" })
+  const a = await record("create-task-list A", "create-task-list", { displayName: SMOKE_NAMES[0] })
   listA = idAfter(a.text)
-  const b = await record("create-task-list B", "create-task-list", { displayName: "MCP smoke B (safe to delete)" })
+  const b = await record("create-task-list B", "create-task-list", { displayName: SMOKE_NAMES[2] })
   listB = idAfter(b.text)
-  if (!listA || !listB) throw new Error("could not create the temporary lists")
-  await record("update-task-list rename A", "update-task-list", {
-    listId: listA,
-    displayName: "MCP smoke A renamed (safe to delete)",
-  })
+  if (!listA || !listB) throw new Error("a temporary list was not confirmed; cleanup looks for it by name")
+  await record("update-task-list rename A", "update-task-list", { listId: listA, displayName: SMOKE_NAMES[1] })
 
   // --- create-task variants
   const plain = await record("create-task plain", "create-task", { listId: listA, title: "smoke plain" })
@@ -276,34 +347,18 @@ try {
     recurrence: { pattern: { type: "daily", interval: 1 }, range: { type: "noEnd" } },
   })
 
-  // --- get-tasks variants on the temporary list
-  await record("get-tasks A", "get-tasks", { listId: listA, orderby: "createdDateTime" })
-  await record("get-tasks A select=status", "get-tasks", {
-    listId: listA,
-    select: "status",
-    orderby: "createdDateTime",
-  })
+  // --- get-tasks variants on the temporary list (Graph rejects $orderby=title)
+  const byCreated = { listId: listA, orderby: "createdDateTime" }
+  await record("get-tasks A", "get-tasks", byCreated)
+  await record("get-tasks A select=status", "get-tasks", { ...byCreated, select: "status" })
   await record("get-tasks A select=recurrence,importance", "get-tasks", {
-    listId: listA,
+    ...byCreated,
     select: "recurrence,importance",
-    orderby: "createdDateTime",
   })
-  await record("get-tasks A top=2 orderby=createdDateTime", "get-tasks", {
-    listId: listA,
-    top: 2,
-    orderby: "createdDateTime",
-  })
-  await record("get-tasks A skip=1 orderby=createdDateTime", "get-tasks", {
-    listId: listA,
-    skip: 1,
-    orderby: "createdDateTime",
-  })
-  await record("get-tasks A filter importance high", "get-tasks", {
-    listId: listA,
-    filter: "importance eq 'high'",
-    orderby: "createdDateTime",
-  })
-  await record("get-tasks A count", "get-tasks", { listId: listA, count: true, orderby: "createdDateTime" })
+  await record("get-tasks A top=2 orderby=createdDateTime", "get-tasks", { ...byCreated, top: 2 })
+  await record("get-tasks A skip=1 orderby=createdDateTime", "get-tasks", { ...byCreated, skip: 1 })
+  await record("get-tasks A filter importance high", "get-tasks", { ...byCreated, filter: "importance eq 'high'" })
+  await record("get-tasks A count", "get-tasks", { ...byCreated, count: true })
 
   // --- update-task variants
   await record("update-task title+importance", "update-task", {
@@ -321,7 +376,7 @@ try {
   await record("update-task clear due date", "update-task", { listId: listA, taskId: fullId, dueDateTime: "" })
   await record("update-task no properties", "update-task", { listId: listA, taskId: fullId })
   await record("update-task complete", "update-task", { listId: listA, taskId: plainId, status: "completed" })
-  await record("get-tasks A after updates", "get-tasks", { listId: listA, orderby: "createdDateTime" })
+  await record("get-tasks A after updates", "get-tasks", byCreated)
 
   // --- checklist items
   const c1 = await record("create-checklist-item 1", "create-checklist-item", {
@@ -368,7 +423,7 @@ try {
 
   // --- delete-task and error paths
   await record("delete-task", "delete-task", { listId: listA, taskId: fullId })
-  await record("get-tasks A after delete", "get-tasks", { listId: listA, orderby: "createdDateTime" })
+  await record("get-tasks A after delete", "get-tasks", byCreated)
   await record("get-tasks unknown list", "get-tasks", { listId: "AAMkAGNvdF9hX3JlYWxfbGlzdF9pZA" })
   await record("update-task unknown task", "update-task", {
     listId: listA,
@@ -377,20 +432,26 @@ try {
   })
   await record("delete-task unknown task", "delete-task", { listId: listA, taskId: "AAMkAGNvdF9hX3JlYWxfdGFza19pZA" })
 
-  // --- real data, shape only
-  const lists = await rawCall("get-task-lists", {})
-  const realIds = [...lists.text.matchAll(/ID: (\S+)/g)].map((m) => m[1]).filter((id) => id !== listA && id !== listB)
-  recordShape("get-task-lists", "get-task-lists", { isError: lists.isError, lists: realIds.length })
+  // --- protocol-level errors: how argument validation and unknown tools are reported
+  await record("get-tasks wrong argument type", "get-tasks", { listId: listA, top: "2" })
+  await record("get-tasks missing required argument", "get-tasks", {})
+  await record("unknown tool", "no-such-tool", {})
+
+  // --- real data, shape only (smoke-named lists, including leftovers, are excluded)
+  const lists = (await listLists(server)) ?? []
+  const realIds = lists.filter((l) => !SMOKE_NAMES.includes(l.name)).map((l) => l.id)
+  recordShape("get-task-lists", "get-task-lists", { listed: lists.length > 0, lists: realIds.length })
   for (const groupBy of ["category", "shared", "type"]) {
     const r = await rawCall("get-task-lists-organized", { groupBy, includeIds: true })
     recordShape(`get-task-lists-organized ${groupBy}`, "get-task-lists-organized", {
       isError: r.isError,
+      error: r.error,
       // The ID reference prints "name: id" lines, so count the real list IDs that appear.
       listIdsShown: realIds.filter((id) => r.text.includes(id)).length,
     })
   }
   const counts = []
-  for (const id of realIds) counts.push({ id, n: countIds((await rawCall("get-tasks", { listId: id })).text) })
+  for (const id of realIds) counts.push({ id, n: countTasks((await rawCall("get-tasks", { listId: id })).text) })
   counts.sort((x, y) => y.n - x.n)
   recordShape("get-tasks every list (task counts, largest first)", "get-tasks", { counts: counts.map((c) => c.n) })
   const big = counts[0]?.id
@@ -403,12 +464,12 @@ try {
       const r = await rawCall("get-tasks", { listId: big, top: 25, ...extra })
       recordShape(`get-tasks largest list top=25 ${name}`, "get-tasks", {
         isError: r.isError,
-        tasks: countIds(r.text),
+        tasks: countTasks(r.text),
         fields: fieldKinds(r.text),
       })
     }
     const t3 = await rawCall("get-tasks", { listId: big, top: 3 })
-    recordShape("get-tasks largest list top=3", "get-tasks", { tasks: countIds(t3.text) })
+    recordShape("get-tasks largest list top=3", "get-tasks", { tasks: countTasks(t3.text) })
   }
   for (const testType of ["odata-select", "odata-expand", "headers", "extensions"]) {
     const r = await rawCall("test-graph-api-exploration", { testType })
@@ -421,18 +482,34 @@ try {
 } catch (error) {
   steps.push({ step: "harness error", result: { error: String(error) } })
 } finally {
-  for (const [name, id] of [
-    ["A", listA],
-    ["B", listB],
-  ]) {
-    if (!id) continue
-    const r = await rawCall("delete-task-list", { listId: id })
-    const remaining = await rawCall("get-task-lists", {})
-    const cleaned = /success/i.test(r.text) && !remaining.text.includes(id)
-    steps.push({ step: `cleanup delete-task-list ${name}`, result: { deleted: cleaned } })
-    if (!cleaned) console.error(`WARNING: temporary list ${name} may still exist; delete "MCP smoke ${name}…" by hand`)
+  // Cleanup needs a live server; start a fresh one if the first has died.
+  // A server that died before cleanup fails the run, whatever the snapshot says.
+  protocol.serverExitedEarly = server.exited
+  let cleaner = server
+  if (server.exited) {
+    cleaner = connect()
+    await handshake(cleaner)
   }
-  child.kill()
+  const before = await listLists(cleaner)
+  const targets = new Map()
+  for (const id of [listA, listB]) if (id) targets.set(id, "this run")
+  for (const l of before ?? []) if (SMOKE_NAMES.includes(l.name) && !targets.has(l.id)) targets.set(l.id, "leftover")
+  for (const [id] of targets) await callOn(cleaner, "delete-task-list", { listId: id })
+  const after = await listLists(cleaner)
+  const leftovers = [...targets].filter(([, origin]) => origin === "leftover").length
+  // delete-task-list reports success whatever Graph says, so only a fresh listing that no
+  // longer shows the lists counts as proof.
+  const verified = before !== null && after !== null
+  const remaining = after?.filter((l) => targets.has(l.id) || SMOKE_NAMES.includes(l.name)).length
+  const cleanup = { verified, remaining: verified ? remaining : "unknown", leftoversFromEarlierRuns: leftovers }
+  steps.push({ step: "cleanup", result: { verified, remaining: cleanup.remaining } })
+  if (!verified || remaining) {
+    console.error(`WARNING: cleanup ${verified ? `left ${remaining} list(s)` : "could not be verified"}.`)
+    console.error(`Delete any list named ${SMOKE_NAMES.map((n) => `"${n}"`).join(", ")} by hand.`)
+  }
+  if (leftovers) console.error(`Also deleted ${leftovers} smoke list(s) left by an earlier run.`)
+  cleaner.kill()
+  if (cleaner !== server) server.kill()
 }
 
 mkdirSync(SNAPSHOT_DIR, { recursive: true })
@@ -445,16 +522,22 @@ const snapshot = {
     instructions: init.result.instructions,
   }),
   tools,
+  protocol: sortKeys(protocol),
   steps,
 }
 const out = resolve(SNAPSHOT_DIR, `${label}.json`)
 writeFileSync(out, JSON.stringify(snapshot, null, 2) + "\n")
-const failures = steps.filter((s) => s.result?.error || s.result?.deleted === false)
-console.log(`${steps.length} steps, ${tools.length} tools -> ${out}`)
+const cleanupStep = steps.find((s) => s.step === "cleanup")?.result
+const failed =
+  protocol.serverExitedEarly ||
+  steps.some((s) => s.step === "harness error") ||
+  !cleanupStep?.verified ||
+  cleanupStep.remaining
+console.log(`${steps.length} steps, ${tools.length} tools, ${protocol.strayStdoutLines} stray stdout line(s) -> ${out}`)
 for (const s of steps) {
   const r = s.result
-  const status = r.error ? `ERROR ${r.error}` : r.isError ? "isError" : r.deleted === false ? "NOT CLEANED" : "ok"
+  const status = r.error ? "error" : r.isError ? "isError" : "ok"
   const first = typeof r.text === "string" ? r.text.split("\n")[0].slice(0, 90) : JSON.stringify(r).slice(0, 90)
   console.log(`  ${status.padEnd(8)} ${s.step.padEnd(52)} ${first}`)
 }
-process.exit(failures.length ? 1 : 0)
+process.exit(failed ? 1 : 0)

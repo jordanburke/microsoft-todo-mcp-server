@@ -35,16 +35,22 @@ pnpm start           # Run MCP server directly
 
 ```bash
 pnpm run build && node scripts/smoke-live.mjs --label <name>   # writes .smoke/<name>.json
-node scripts/smoke-live.mjs --compare <a> <b>                  # diff two snapshots; exit 1 if any differ
+node scripts/smoke-live.mjs --compare <a> <b>                  # diff two snapshots
 ```
 
-Drives every tool over stdio against the real account in `tokens.json`. Writes stay inside two
-temporary "MCP smoke … (safe to delete)" lists, deleted at the end; existing lists are read for
-shape only (counts, which fields print). `--cmd "<command>"` runs a different server entry point.
-`.smoke/` is gitignored because snapshots hold account data. Two runs of the same build compare
-clean, so any diff is a behaviour change (or, for steps marked real data, the account changed).
-The baseline for the somamcp migration is `.smoke/v1.2.0-before-somamcp.json`, recorded on
-v1.2.0 (98f79e9). Graph rejects `$orderby=title` on tasks, so the harness orders by `createdDateTime`.
+Drives every tool over stdio against the real account in `tokens.json`, and records the
+`initialize` result, full tool schemas, each call's normalized result (text, `isError`, content
+keys, `structuredContent`, JSON-RPC error codes) and stdout hygiene. Writes stay inside two
+temporary "MCP smoke … (safe to delete)" lists. Cleanup runs even if the server dies (it starts a
+fresh one), also deletes smoke lists left by an earlier run, and trusts only a fresh
+`get-task-lists` as proof. Existing lists are read for shape only. `--cmd "<command>"` runs a
+different server entry point. `.smoke/` is gitignored because snapshots hold account data.
+
+Two runs of the same build compare clean. `--compare` exits 1 only on a behaviour difference;
+steps marked real data also change when the account does, so they are reported but do not fail.
+A run exits 1 if the server died early or cleanup was not verified. The baseline for the somamcp
+migration is `.smoke/v1.2.0-before-somamcp.json`, recorded on v1.2.0. Graph rejects
+`$orderby=title` on tasks, so the harness orders by `createdDateTime`.
 
 ## ts-builds & pnpm 12 Notes
 
