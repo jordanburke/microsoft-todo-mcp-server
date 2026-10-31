@@ -374,7 +374,7 @@ const recurrenceRangeSchema = z.object({
     .string()
     .optional()
     .describe(
-      "IANA timezone for the recurrence. In live testing Microsoft To Do stored UTC whatever was sent, and keeps only the due date's day, not its time.",
+      "IANA timezone for the recurrence. In one live test Microsoft To Do stored 'Asia/Kolkata' as UTC, and it keeps only the due date's day, not its time.",
     ),
 })
 
@@ -426,7 +426,7 @@ function recurrenceProblem({ pattern, range }: RecurrenceInput): string | null {
     )
     if (missing.length) return `A ${type} ${kind} needs ${missing.join(" and ")}.`
     const extra = optional.filter((f) => value[f] !== undefined && !fields.allowed.includes(f))
-    if (extra.length) return `A ${type} ${kind} does not take ${extra.join(" or ")}; Microsoft To Do ignores it.`
+    if (extra.length) return `A ${type} ${kind} does not use ${extra.join(" or ")}; leave it out.`
     return null
   }
   return (
@@ -445,7 +445,7 @@ function toGraphRecurrence({ pattern, range }: RecurrenceInput, dueISO: string):
   }
 }
 
-// A stored recurrence as one readable line, e.g. "every 2 weekly on friday (range: numbered, 5x)".
+// A stored recurrence as one readable line, e.g. "every 2 weekly on friday (range: numbered, 5x, ends 2027-01-15)".
 // Graph fills every field on read (index "first", endDate "0001-01-01", zeros), so only the
 // fields the pattern type uses are shown.
 function formatRecurrence({ pattern, range }: NonNullable<Task["recurrence"]>): string {
@@ -466,7 +466,11 @@ function formatRecurrence({ pattern, range }: NonNullable<Task["recurrence"]>): 
   }
   let rangeText = range.type
   if (range.type === "endDate" && range.endDate) rangeText += ` until ${range.endDate}`
-  if (range.type === "numbered" && range.numberOfOccurrences) rangeText += `, ${range.numberOfOccurrences}x`
+  if (range.type === "numbered" && range.numberOfOccurrences) {
+    rangeText += `, ${range.numberOfOccurrences}x`
+    // Graph computes the last occurrence's date for a numbered range; show it when present.
+    if (range.endDate && range.endDate !== "0001-01-01") rangeText += `, ends ${range.endDate}`
+  }
   return `${text} (range: ${rangeText})`
 }
 

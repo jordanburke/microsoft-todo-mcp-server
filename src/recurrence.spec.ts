@@ -153,7 +153,7 @@ describe("get-tasks recurrence display", () => {
   })
 })
 
-describe("recurrence rules Graph would reject", () => {
+describe("recurrence rules the server refuses", () => {
   const create = (recurrence: Record<string, unknown>): Promise<string> =>
     callTool("create-task", { listId: "L1", title: "Rent", dueDateTime: "2026-11-15T09:00:00Z", recurrence })
 
@@ -180,7 +180,7 @@ describe("recurrence rules Graph would reject", () => {
       "weekly with dayOfMonth",
       { type: "weekly", interval: 1, daysOfWeek: ["monday"], dayOfMonth: 3 },
       { type: "noEnd" },
-      "does not take dayOfMonth",
+      "does not use dayOfMonth",
     ],
     ["endDate range without endDate", { type: "daily", interval: 1 }, { type: "endDate" }, "needs endDate"],
     [
@@ -193,7 +193,7 @@ describe("recurrence rules Graph would reject", () => {
       "noEnd range with an endDate",
       { type: "daily", interval: 1 },
       { type: "noEnd", endDate: "2027-01-01" },
-      "does not take endDate",
+      "does not use endDate",
     ],
   ])("refuses %s before sending anything", async (_name, pattern, range, message) => {
     const text = await create({ pattern, range })
@@ -214,7 +214,7 @@ describe("recurrence rules Graph would reject", () => {
     expect(calls).toHaveLength(0)
   })
 
-  it("gives a weekly rule firstDayOfWeek, which Graph requires", async () => {
+  it("gives a weekly rule firstDayOfWeek, which the docs list as required", async () => {
     respond = ({ body }) => ({ id: "T1", title: "Standup", recurrence: body?.recurrence })
 
     await create({ pattern: { type: "weekly", interval: 1, daysOfWeek: ["monday"] }, range: { type: "noEnd" } })
@@ -255,7 +255,7 @@ describe("Repeats line on what Graph returns", () => {
     [
       { type: "weekly", interval: 2, daysOfWeek: ["friday"] },
       { type: "numbered", endDate: "2027-01-15", numberOfOccurrences: 5 },
-      "every 2 weekly on friday (range: numbered, 5x)",
+      "every 2 weekly on friday (range: numbered, 5x, ends 2027-01-15)",
     ],
     [
       { type: "relativeMonthly", interval: 1, daysOfWeek: ["tuesday"], index: "second" },
