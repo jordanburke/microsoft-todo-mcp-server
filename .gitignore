@@ -42,3 +42,6 @@ tokens.json
 
 # MCP Registry publisher binary, downloaded by CI
 mcp-publisher
+
+# Live smoke snapshots (scripts/smoke-live.mjs); they hold account data
+.smoke/
