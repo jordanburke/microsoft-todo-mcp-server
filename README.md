@@ -237,7 +237,7 @@ pnpm run typecheck    # TypeScript type checking
 
 ## MCP Tools
 
-The server provides 13 tools for comprehensive Microsoft To Do management:
+The server provides 16 tools for comprehensive Microsoft To Do management:
 
 ### Authentication
 
@@ -267,10 +267,10 @@ Recurrence derives its first occurrence from the task's `dueDateTime`, which is
 required. Examples:
 
 ```json
-// Monthly bill, 15th of every month, forever, in Asia/Kolkata
+// Monthly bill, 15th of every month, forever
 {
   "pattern": {"type": "absoluteMonthly", "interval": 1, "dayOfMonth": 15},
-  "range":   {"type": "noEnd", "recurrenceTimeZone": "Asia/Kolkata"}
+  "range":   {"type": "noEnd"}
 }
 
 // Weekly standup every Monday, ends 2027-01-01
@@ -285,6 +285,13 @@ required. Examples:
   "range":   {"type": "noEnd"}
 }
 ```
+
+Each pattern type needs its own fields, and the server refuses a rule that leaves one
+out or adds one the type does not use: `weekly` and `relativeMonthly` take `daysOfWeek`,
+`absoluteMonthly` takes `dayOfMonth`, `absoluteYearly` takes `dayOfMonth` and `month`,
+and `relativeYearly` takes `daysOfWeek` and `month`. A `weekly` rule without
+`firstDayOfWeek` gets `sunday`. An `endDate` range needs `endDate`, and a `numbered`
+range needs `numberOfOccurrences`.
 
 Stop a recurring task by passing `recurrence: null` to `update-task`. See
 <https://learn.microsoft.com/en-us/graph/api/resources/recurrencepattern> for

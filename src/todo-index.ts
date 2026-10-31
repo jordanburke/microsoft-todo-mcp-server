@@ -385,6 +385,61 @@ const recurrenceSchema = z
     "Recurrence rule. Omit to leave the task one-off. To stop an existing recurring task, set recurrence to null via update-task.",
   )
 
+type RecurrenceInput = z.infer<typeof recurrenceSchema>
+
+// Which optional fields each pattern and range type requires and accepts, per
+// https://learn.microsoft.com/en-us/graph/api/resources/recurrencepattern and
+// .../recurrencerange. Graph rejects a missing required field and any field the type
+// does not use, with a 400 that names neither, so the server checks before sending.
+// firstDayOfWeek is required for weekly but defaults to sunday (see toGraphRecurrence).
+const PATTERN_FIELDS: Record<string, { required: string[]; allowed: string[] }> = {
+  daily: { required: [], allowed: [] },
+  weekly: { required: ["daysOfWeek"], allowed: ["daysOfWeek", "firstDayOfWeek"] },
+  absoluteMonthly: { required: ["dayOfMonth"], allowed: ["dayOfMonth"] },
+  relativeMonthly: { required: ["daysOfWeek"], allowed: ["daysOfWeek", "index"] },
+  absoluteYearly: { required: ["dayOfMonth", "month"], allowed: ["dayOfMonth", "month"] },
+  relativeYearly: { required: ["daysOfWeek", "month"], allowed: ["daysOfWeek", "month", "index"] },
+}
+const RANGE_FIELDS: Record<string, { required: string[]; allowed: string[] }> = {
+  noEnd: { required: [], allowed: [] },
+  endDate: { required: ["endDate"], allowed: ["endDate"] },
+  numbered: { required: ["numberOfOccurrences"], allowed: ["numberOfOccurrences"] },
+}
+const PATTERN_OPTIONAL = ["month", "dayOfMonth", "daysOfWeek", "firstDayOfWeek", "index"] as const
+const RANGE_OPTIONAL = ["endDate", "numberOfOccurrences"] as const
+
+// The first rule the recurrence breaks, as a message for the caller, or null if none.
+function recurrenceProblem({ pattern, range }: RecurrenceInput): string | null {
+  const check = (
+    kind: string,
+    type: string,
+    value: Record<string, unknown>,
+    fields: { required: string[]; allowed: string[] },
+    optional: readonly string[],
+  ): string | null => {
+    const missing = fields.required.filter(
+      (f) => value[f] === undefined || (Array.isArray(value[f]) && !value[f].length),
+    )
+    if (missing.length) return `A ${type} ${kind} needs ${missing.join(" and ")}.`
+    const extra = optional.filter((f) => value[f] !== undefined && !fields.allowed.includes(f))
+    if (extra.length) return `A ${type} ${kind} does not take ${extra.join(" or ")}; Microsoft Graph rejects it.`
+    return null
+  }
+  return (
+    check("pattern", pattern.type, pattern, PATTERN_FIELDS[pattern.type], PATTERN_OPTIONAL) ??
+    check("range", range.type, range, RANGE_FIELDS[range.type], RANGE_OPTIONAL)
+  )
+}
+
+// The Graph body for a checked recurrence. range.startDate defaults to the due date's
+// calendar day, and a weekly pattern gets firstDayOfWeek, which Graph requires for it.
+function toGraphRecurrence({ pattern, range }: RecurrenceInput, dueISO: string): RecurrenceInput {
+  return {
+    pattern: pattern.type === "weekly" ? { firstDayOfWeek: "sunday", ...pattern } : { ...pattern },
+    range: { ...range, startDate: range.startDate ?? dueISO.substring(0, 10) },
+  }
+}
+
 interface ChecklistItem {
   id: string
   displayName: string
@@ -1192,6 +1247,10 @@ server.tool(
       }
 
       if (recurrence) {
+        const problem = recurrenceProblem(recurrence)
+        if (problem) {
+          return { content: [{ type: "text", text: `Recurrence not set: ${problem}` }] }
+        }
         if (!dueDateTime) {
           return {
             content: [
@@ -1202,15 +1261,7 @@ server.tool(
             ],
           }
         }
-        // Default range.startDate from the task due date (YYYY-MM-DD)
-        const dueDate = dueDateTime.substring(0, 10)
-        taskBody.recurrence = {
-          pattern: { ...recurrence.pattern },
-          range: {
-            ...recurrence.range,
-            startDate: recurrence.range.startDate ?? dueDate,
-          },
-        }
+        taskBody.recurrence = toGraphRecurrence(recurrence, dueDateTime)
       }
 
       const response = await makeGraphRequest<Task>(
@@ -1225,7 +1276,7 @@ server.tool(
           content: [
             {
               type: "text",
-              text: `Failed to create task in list: ${listId}`,
+              text: `Failed to create task in list: ${listId}: ${lastGraphError ?? "unknown error"}`,
             },
           ],
         }
@@ -1380,6 +1431,10 @@ server.tool(
           // Caller asked to clear any existing recurrence
           taskBody.recurrence = null
         } else {
+          const problem = recurrenceProblem(recurrence)
+          if (problem) {
+            return { content: [{ type: "text", text: `Recurrence not set: ${problem}` }] }
+          }
           // Graph derives the first occurrence from the due date, and range.startDate
           // defaults to it. Use the due date this call sets, or else the one the task
           // already has. Clearing the due date in the same call leaves none.
@@ -1413,13 +1468,7 @@ server.tool(
               ],
             }
           }
-          taskBody.recurrence = {
-            pattern: { ...recurrence.pattern },
-            range: {
-              ...recurrence.range,
-              startDate: recurrence.range.startDate ?? dueISO.substring(0, 10),
-            },
-          }
+          taskBody.recurrence = toGraphRecurrence(recurrence, dueISO)
         }
       }
 
@@ -1447,7 +1496,7 @@ server.tool(
           content: [
             {
               type: "text",
-              text: `Failed to update task with ID: ${taskId} in list: ${listId}`,
+              text: `Failed to update task with ID: ${taskId} in list: ${listId}: ${lastGraphError ?? "unknown error"}`,
             },
           ],
         }

@@ -11,6 +11,7 @@ type GraphCall = { url: string; method: string; body?: Record<string, unknown> }
 
 let calls: GraphCall[] = []
 let respond: (call: GraphCall) => unknown = () => ({})
+let status = 200
 let client: Client
 let dir: string
 let originalCwd: string
@@ -56,6 +57,7 @@ afterAll(async () => {
 
 beforeEach(() => {
   calls = []
+  status = 200
   vi.spyOn(console, "error").mockImplementation(() => {})
   vi.stubGlobal(
     "fetch",
@@ -66,7 +68,7 @@ beforeEach(() => {
         body: init?.body ? JSON.parse(String(init.body)) : undefined,
       }
       calls.push(call)
-      return Response.json(respond(call))
+      return Response.json(respond(call), { status })
     }),
   )
 })
@@ -148,5 +150,90 @@ describe("get-tasks recurrence display", () => {
   it("hides it when select leaves it out, and shows it when select names it", async () => {
     expect(await callTool("get-tasks", { listId: "L1", select: "status" })).not.toContain("Repeats:")
     expect(await callTool("get-tasks", { listId: "L1", select: "recurrence" })).toContain("Repeats:")
+  })
+})
+
+describe("recurrence rules Graph would reject", () => {
+  const create = (recurrence: Record<string, unknown>): Promise<string> =>
+    callTool("create-task", { listId: "L1", title: "Rent", dueDateTime: "2026-11-15T09:00:00Z", recurrence })
+
+  it.each([
+    [
+      "absoluteMonthly without dayOfMonth",
+      { type: "absoluteMonthly", interval: 1 },
+      { type: "noEnd" },
+      "needs dayOfMonth",
+    ],
+    [
+      "absoluteYearly without month",
+      { type: "absoluteYearly", interval: 1, dayOfMonth: 4 },
+      { type: "noEnd" },
+      "needs month",
+    ],
+    [
+      "weekly without daysOfWeek",
+      { type: "weekly", interval: 1, daysOfWeek: [] },
+      { type: "noEnd" },
+      "needs daysOfWeek",
+    ],
+    [
+      "weekly with dayOfMonth",
+      { type: "weekly", interval: 1, daysOfWeek: ["monday"], dayOfMonth: 3 },
+      { type: "noEnd" },
+      "does not take dayOfMonth",
+    ],
+    ["endDate range without endDate", { type: "daily", interval: 1 }, { type: "endDate" }, "needs endDate"],
+    [
+      "numbered range without a count",
+      { type: "daily", interval: 1 },
+      { type: "numbered" },
+      "needs numberOfOccurrences",
+    ],
+    [
+      "noEnd range with an endDate",
+      { type: "daily", interval: 1 },
+      { type: "noEnd", endDate: "2027-01-01" },
+      "does not take endDate",
+    ],
+  ])("refuses %s before sending anything", async (_name, pattern, range, message) => {
+    const text = await create({ pattern, range })
+
+    expect(text).toContain("Recurrence not set")
+    expect(text).toContain(message)
+    expect(calls).toHaveLength(0)
+  })
+
+  it("refuses on update-task before reading the task", async () => {
+    const text = await callTool("update-task", {
+      listId: "L1",
+      taskId: "T1",
+      recurrence: { pattern: { type: "absoluteMonthly", interval: 1 }, range: { type: "noEnd" } },
+    })
+
+    expect(text).toContain("needs dayOfMonth")
+    expect(calls).toHaveLength(0)
+  })
+
+  it("gives a weekly rule firstDayOfWeek, which Graph requires", async () => {
+    respond = ({ body }) => ({ id: "T1", title: "Standup", recurrence: body?.recurrence })
+
+    await create({ pattern: { type: "weekly", interval: 1, daysOfWeek: ["monday"] }, range: { type: "noEnd" } })
+
+    expect((calls[0].body?.recurrence as { pattern: unknown }).pattern).toEqual({
+      type: "weekly",
+      interval: 1,
+      daysOfWeek: ["monday"],
+      firstDayOfWeek: "sunday",
+    })
+  })
+
+  it("passes Graph's reason through when Graph still refuses", async () => {
+    status = 400
+    respond = () => ({ error: { code: "invalidRequest", message: "Invalid recurrence pattern" } })
+
+    const text = await create(monthly15)
+
+    expect(text).toContain("Failed to create task in list: L1")
+    expect(text).toContain("Invalid recurrence pattern")
   })
 })
