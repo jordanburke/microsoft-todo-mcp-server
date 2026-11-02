@@ -1,5 +1,3 @@
-import { Client } from "@modelcontextprotocol/sdk/client/index.js"
-import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js"
 import { mkdtempSync, rmSync } from "fs"
 import { tmpdir } from "os"
 import { join } from "path"
@@ -12,16 +10,28 @@ type GraphCall = { url: string; method: string; body?: Record<string, unknown> }
 let calls: GraphCall[] = []
 let respond: (call: GraphCall) => unknown = () => ({})
 let status = 200
-let client: Client
+let serve: (request: Request) => Promise<Response>
+let rpcId = 0
 let dir: string
 let originalCwd: string
 
 const jwtExpiringIn = (seconds: number): string =>
   `header.${Buffer.from(JSON.stringify({ exp: Math.floor(Date.now() / 1000) + seconds })).toString("base64url")}.sig`
 
+// One JSON-RPC tools/call through the server's own fetch handler. The backend is
+// stateless, so no initialize is needed, and the reply is a single server-sent event.
 const callTool = async (name: string, args: Record<string, unknown>): Promise<string> => {
-  const result = await client.callTool({ name, arguments: args })
-  return (result.content as Array<{ text: string }>)[0].text
+  const response = await serve(
+    new Request("http://localhost/mcp", {
+      method: "POST",
+      headers: { "content-type": "application/json", accept: "application/json, text/event-stream" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: ++rpcId, method: "tools/call", params: { name, arguments: args } }),
+    }),
+  )
+  const data = (await response.text()).split("\n").find((line) => line.startsWith("data: "))
+  const message = JSON.parse(data?.slice("data: ".length) ?? "{}")
+  if (message.error) throw new Error(`JSON-RPC error ${message.error.code}: ${message.error.message}`)
+  return (message.result.content as Array<{ text: string }>)[0].text
 }
 
 const monthly15 = {
@@ -40,14 +50,10 @@ beforeAll(async () => {
   process.env.MS_TODO_REFRESH_TOKEN = "refresh"
 
   const { server } = await import("./todo-index.js")
-  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
-  await server.connect(serverTransport)
-  client = new Client({ name: "spec", version: "0" })
-  await client.connect(clientTransport)
+  serve = (request) => server.fetch(request)
 })
 
 afterAll(async () => {
-  await client.close()
   process.chdir(originalCwd)
   rmSync(dir, { recursive: true, force: true })
   delete process.env.MSTODO_TOKEN_FILE
