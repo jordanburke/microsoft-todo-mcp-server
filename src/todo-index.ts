@@ -28,8 +28,6 @@ const PACKAGE_VERSION: `${number}.${number}.${number}` = JSON.parse(
 export const server = createServer({
   name: "mstodo",
   version: PACKAGE_VERSION,
-  // Off for the before/after comparison with the pre-somamcp build; turned on afterwards.
-  enableIntrospection: false,
 })
 
 // Helper function for making Microsoft Graph API requests
