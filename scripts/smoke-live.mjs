@@ -134,6 +134,10 @@ if (args.includes("--compare")) {
 
 // ---------- run mode ----------
 
+// Every date the harness sends is years ahead. The normalizer masks today's date, so an
+// input date that falls on the day of a run would read as <today> in that run only and
+// show as a spurious difference against a baseline recorded on another day.
+
 const label = flag("--label")
 if (!label) {
   console.error("usage: --label <name> [--cmd '<server command>']  |  --compare <a> <b>")
@@ -310,11 +314,11 @@ try {
     listId: listA,
     title: "smoke full",
     body: "smoke body text",
-    dueDateTime: "2026-12-01T09:00:00Z",
-    startDateTime: "2026-11-25T09:00:00Z",
+    dueDateTime: "2031-12-01T09:00:00Z",
+    startDateTime: "2031-11-25T09:00:00Z",
     importance: "high",
     isReminderOn: true,
-    reminderDateTime: "2026-11-30T09:00:00Z",
+    reminderDateTime: "2031-11-30T09:00:00Z",
     status: "inProgress",
     categories: ["Blue category"],
   })
@@ -322,14 +326,14 @@ try {
   const monthly = await record("create-task recurrence monthly", "create-task", {
     listId: listA,
     title: "smoke monthly",
-    dueDateTime: "2026-11-15T09:00:00Z",
+    dueDateTime: "2031-11-15T09:00:00Z",
     recurrence: { pattern: { type: "absoluteMonthly", interval: 1, dayOfMonth: 15 }, range: { type: "noEnd" } },
   })
   const monthlyId = idAfter(monthly.text)
   await record("create-task recurrence weekly numbered", "create-task", {
     listId: listA,
     title: "smoke weekly",
-    dueDateTime: "2026-11-02T09:00:00Z",
+    dueDateTime: "2031-11-03T09:00:00Z",
     recurrence: {
       pattern: { type: "weekly", interval: 2, daysOfWeek: ["monday"] },
       range: { type: "numbered", numberOfOccurrences: 4 },
@@ -338,7 +342,7 @@ try {
   await record("create-task recurrence refused (missing dayOfMonth)", "create-task", {
     listId: listA,
     title: "never created",
-    dueDateTime: "2026-11-15T09:00:00Z",
+    dueDateTime: "2031-11-15T09:00:00Z",
     recurrence: { pattern: { type: "absoluteMonthly", interval: 1 }, range: { type: "noEnd" } },
   })
   await record("create-task recurrence refused (no due date)", "create-task", {
@@ -370,7 +374,7 @@ try {
   await record("update-task recurrence change (uses existing due)", "update-task", {
     listId: listA,
     taskId: monthlyId,
-    recurrence: { pattern: { type: "daily", interval: 3 }, range: { type: "endDate", endDate: "2027-02-01" } },
+    recurrence: { pattern: { type: "daily", interval: 3 }, range: { type: "endDate", endDate: "2032-02-01" } },
   })
   await record("update-task recurrence null", "update-task", { listId: listA, taskId: monthlyId, recurrence: null })
   await record("update-task clear due date", "update-task", { listId: listA, taskId: fullId, dueDateTime: "" })
