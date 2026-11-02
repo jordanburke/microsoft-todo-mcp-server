@@ -25,7 +25,7 @@ Want to run it on your own machine, or keep your tokens local? Keep reading to s
 
 ## Features
 
-- **16 MCP Tools**: Complete task management functionality including lists, tasks, checklist items, and organization features
+- **17 MCP Tools**: Complete task management functionality including lists, tasks, checklist items, and organization features
 - **Recurring Tasks**: First-class support for Microsoft Graph `recurrence` (daily / weekly / absoluteMonthly / relativeMonthly / absoluteYearly / relativeYearly) on `create-task` and `update-task`
 - **Seamless Authentication**: Automatic token refresh with zero manual intervention
 - **OAuth 2.0 Authentication**: Secure authentication with automatic token refresh
@@ -237,11 +237,12 @@ pnpm run typecheck    # TypeScript type checking
 
 ## MCP Tools
 
-The server provides 16 tools for comprehensive Microsoft To Do management:
+The server provides 17 tools for comprehensive Microsoft To Do management:
 
-### Authentication
+### Authentication and Server Info
 
 - **`auth-status`** - Check authentication status, token expiration, and account type
+- **`info`** - Report the server's name, version, build, runtime, and tool count (from [somamcp](https://www.npmjs.com/package/somamcp); build details come from `SOMAMCP_BUILD_*` environment variables when set)
 
 ### Task Lists (Top-level Containers)
 
