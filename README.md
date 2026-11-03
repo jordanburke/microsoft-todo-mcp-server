@@ -186,11 +186,13 @@ The server finds the token file itself and renews tokens with the client credent
 **Claude Code:**
 
 ```bash
-claude mcp add microsoft-todo -- npx -y microsoft-todo-mcp-server
+claude mcp add -s user microsoft-todo -- npx -y microsoft-todo-mcp-server
 
 # Token file somewhere else:
-claude mcp add microsoft-todo -e MSTODO_TOKEN_FILE=/path/to/tokens.json -- npx -y microsoft-todo-mcp-server
+claude mcp add -s user microsoft-todo -e MSTODO_TOKEN_FILE=/path/to/tokens.json -- npx -y microsoft-todo-mcp-server
 ```
+
+`-s user` makes it available in every project; without it, Claude Code adds it only to the folder you ran the command in.
 
 **Claude Desktop:** add this to its config file:
 
