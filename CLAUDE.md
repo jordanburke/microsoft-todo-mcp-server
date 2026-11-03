@@ -91,7 +91,7 @@ This is a Model Context Protocol (MCP) server that enables AI assistants to inte
 - **`serverInfo.version`** is read from `package.json` at startup (one level up from `dist/` and `src/`), so it tracks releases.
 - **`info`** is somamcp's introspection tool, on by default (`enableIntrospection`). It is the 17th tool.
 - **Specs drive tools through `server.fetch()`** with JSON-RPC (`src/recurrence.spec.ts`). The backend is stateless, so no `initialize` is needed, and each reply is a single server-sent event (`data: {...}`).
-- **SDK 2.x error shapes:** an unknown tool is a JSON-RPC `-32602` error; invalid arguments are `isError` results. Messages name the bad field (`listId: Invalid input: ...`) only from somamcp 2.4.0 (SomaMCP #70); 2.3.0 dropped it.
+- **SDK 2.x error shapes:** an unknown tool is a JSON-RPC `-32602` error; invalid arguments are `isError` results. Messages name the bad field (`listId: Invalid input: ...`) only from somamcp 2.4.0 (SomaMCP #70). somamcp 2.0–2.3 gave only the issue text; the pre-somamcp server (SDK 1.x) did name the field.
 - **Fix somamcp at the source.** It is Jordan's library (`~/IdeaProjects/SomaMCP`, session `somamcp-*`); report or fix bugs there rather than shimming here.
 
 ### Key Architectural Patterns
@@ -100,7 +100,7 @@ This is a Model Context Protocol (MCP) server that enables AI assistants to inte
 - **Multi-tenant Support**: Configurable for different Microsoft account types via TENANT_ID
 - **Error Handling**: Special handling for personal Microsoft accounts (MailboxNotEnabledForRESTAPI)
 - **Type Safety**: Strict TypeScript with Zod 4 schemas for parameter validation
-- **Tests** live beside the code as `src/*.spec.ts`. The repo's `./tokens.json` is a real credential, so specs `chdir` into a temp directory and point `MSTODO_TOKEN_FILE` there before importing anything that loads the token manager
+- **Tests** live beside the code as `src/*.spec.ts`. The repo's `./tokens.json` is a real credential, so specs `chdir` into a temp directory and point `MSTODO_TOKEN_FILE` there before any `TokenManager` reads tokens. `recurrence.spec.ts` imports `todo-index.ts` dynamically for this, because importing it builds the module's token-manager singleton
 
 ### Microsoft Graph API Integration
 
@@ -124,14 +124,14 @@ npm version <patch|minor|major> && git push --follow-tags origin main
 gh release create vX.Y.Z --title vX.Y.Z --generate-notes --verify-tag
 ```
 
-`npm version` also syncs `server.json` through the `version` script. After publishing, wait for the tarball to answer 200 before installing: npm's CDN caches a 404 from an early request for several minutes (seen on v1.1.4 and v1.2.0).
+`npm version` also syncs `server.json` through the `version` script. The same release event runs `publish-registry.yml`, which waits for the npm tarball and then submits `server.json` to the MCP Registry; if it fails, rerun it with `workflow_dispatch` rather than cutting a new release. After publishing, wait for the tarball to answer 200 before installing: npm's CDN caches a 404 from an early request for several minutes (seen on v1.1.4 and v1.2.0).
 
 ## Known Issues (not yet fixed)
 
 - `delete-task` and `delete-task-list` report success without checking Graph's response, so an unknown ID "succeeds".
 - `get-tasks` offers `orderby=title`, which Graph rejects, and `count`, which Graph ignores (the server prints the number returned).
 - `get-task-lists-organized` with `groupBy=shared` prints no list IDs, even with `includeIds`.
-- Env-token setups (`MS_TODO_ACCESS_TOKEN`/`MS_TODO_REFRESH_TOKEN`, as `create-mcp-config.ts` writes) cannot renew without `CLIENT_ID`/`CLIENT_SECRET` in the env too.
+- Env-token setups (`MS_TODO_ACCESS_TOKEN`/`MS_TODO_REFRESH_TOKEN`, as `create-mcp-config.ts` writes) cannot renew without `CLIENT_ID`/`CLIENT_SECRET` (and `TENANT_ID` unless it is `organizations`) in the env too: on the env path no stored tokens exist yet to supply them.
 - After a renewal, `TokenManager.updateClaudeConfig` writes the new tokens into a Claude Desktop entry named `microsoft-todo`. On the next launch those env tokens take precedence over the token file, and they carry no client credentials (see the previous item).
 - The auth server's `/refresh` route rewrites `tokens.json` without the refresh token or client credentials.
 - `postinstall` prints `npx microsoft-todo-mcp-server setup`, which starts the server, not setup; the setup command is `mstodo-setup`.

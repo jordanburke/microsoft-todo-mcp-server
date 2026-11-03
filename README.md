@@ -83,7 +83,7 @@ pnpm run build
    - **Accounts in any organizational directory and personal Microsoft accounts** - For both work accounts and personal accounts
 5. Add a **Web** platform redirect URI: `http://localhost:3000/callback`
 6. After creating the app, go to "Certificates & secrets" and create a new client secret. Note when it expires: sign-in and token renewal stop working on that date
-7. Go to "API permissions" and add these Microsoft Graph delegated permissions. The sign-in asks for all of them, so adding them here is what lets an admin approve them ahead of time:
+7. Go to "API permissions" and add these Microsoft Graph delegated permissions. The sign-in requests these (plus the standard `openid` and `profile`), so adding them here is what lets an admin approve them ahead of time:
    - `Tasks.Read`, `Tasks.ReadWrite`, `Tasks.Read.Shared`, `Tasks.ReadWrite.Shared`
    - `User.Read`, `offline_access`
 8. For a work or school tenant that requires it, an admin clicks "Grant admin consent". Personal accounts consent on the sign-in page
@@ -215,7 +215,7 @@ Add `"env": { "MSTODO_TOKEN_FILE": "/path/to/tokens.json" }` if the file is not 
 
 **Cursor:** add the same `mcpServers` entry to `~/.cursor/mcp.json`.
 
-**About `mstodo-config` and token environment variables:** `pnpm run create-config` (or `mstodo-config`) writes an `mcp.json` that passes `MS_TODO_ACCESS_TOKEN` and `MS_TODO_REFRESH_TOKEN` instead of a token file. Renewing those also needs `CLIENT_ID` and `CLIENT_SECRET` in the same `env` block. Without them, calls start failing about an hour after the server starts, when the access token runs out. The token-file setup above avoids this.
+**About `mstodo-config` and token environment variables:** `pnpm run create-config` (or `mstodo-config`) writes an `mcp.json` that passes `MS_TODO_ACCESS_TOKEN` and `MS_TODO_REFRESH_TOKEN` instead of a token file. Renewing those also needs `CLIENT_ID` and `CLIENT_SECRET` in the same `env` block, plus `TENANT_ID` unless it is `organizations`. Without them, calls start failing when the access token expires, within about an hour of signing in. The token-file setup above avoids this.
 
 ### Available Scripts
 
