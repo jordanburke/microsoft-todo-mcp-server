@@ -68,9 +68,9 @@ Built with **ts-builds 4.0.2** (tsdown, vitest 5) on **pnpm 12**. Non-obvious, l
 
 This is a Model Context Protocol (MCP) server that enables AI assistants to interact with Microsoft To Do via the Microsoft Graph API. The codebase follows a modular architecture with four main components:
 
-1. **MCP Server** (`src/todo-index.ts`): Core server implementing the MCP protocol with 13 tools for Microsoft To Do operations
-2. **CLI Wrapper** (`src/cli.ts`): Executable entry point that handles token loading from environment or file
-3. **Auth Server** (`src/auth-server.js`): Express server implementing OAuth 2.0 flow with MSAL
+1. **MCP Server** (`src/todo-index.ts`): Built on somamcp (MCP SDK 2.x underneath), serving 17 tools over stdio: 16 for Microsoft To Do plus somamcp's `info`
+2. **CLI Wrapper** (`src/cli.ts`): Executable entry point; it only calls `startServer()`, and `src/token-manager.ts` finds and refreshes the tokens
+3. **Auth Server** (`src/auth-server.ts`): Express server implementing OAuth 2.0 flow with MSAL
 4. **Config Generator** (`src/create-mcp-config.ts`): Utility to create MCP configuration files
 
 ### Key Architectural Patterns
@@ -90,7 +90,7 @@ The server communicates with Microsoft Graph API v1.0:
 
 ### Environment Configuration
 
-- `MSTODO_TOKEN_FILE`: Custom path for tokens.json (defaults to ./tokens.json)
+- `MSTODO_TOKEN_FILE`: Custom path for tokens.json. Without it, the token manager uses the per-user config directory (`~/.config/microsoft-todo-mcp/tokens.json`, or `%APPDATA%\microsoft-todo-mcp\tokens.json` on Windows), then falls back to `./tokens.json` and migrates it
 - `.env` file required for authentication with CLIENT_ID, CLIENT_SECRET, TENANT_ID, REDIRECT_URI
 
 ## Important Notes

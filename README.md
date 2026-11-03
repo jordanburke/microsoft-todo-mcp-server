@@ -36,8 +36,8 @@ Want to run it on your own machine, or keep your tokens local? Keep reading to s
 
 ## Prerequisites
 
-- Node.js 16 or higher (tested with Node.js 18.x, 20.x, and 22.x)
-- pnpm package manager
+- Node.js 20 or higher (CI tests 22.x and 24.x); building from source needs 22.12 or higher
+- pnpm, only to build from source
 - A Microsoft account (personal, work, or school)
 - Azure App Registration (see setup below)
 
@@ -242,7 +242,7 @@ The server provides 17 tools for comprehensive Microsoft To Do management:
 ### Authentication and Server Info
 
 - **`auth-status`** - Check authentication status, token expiration, and account type
-- **`info`** - Report the server's name, version, build, runtime, and tool count (from [somamcp](https://www.npmjs.com/package/somamcp); build details come from `SOMAMCP_BUILD_*` environment variables when set)
+- **`info`** - Report the server's name, version, build, runtime, and tool count (from [somamcp](https://www.npmjs.com/package/somamcp); build details come from the `SOMAMCP_BUILD_COMMIT`, `SOMAMCP_BUILD_DATE`, `SOMAMCP_BUILD_BRANCH` and `SOMAMCP_ENVIRONMENT` environment variables when set)
 
 ### Task Lists (Top-level Containers)
 
@@ -250,6 +250,7 @@ The server provides 17 tools for comprehensive Microsoft To Do management:
 - **`create-task-list`** - Create a new task list
 - **`update-task-list`** - Rename an existing task list
 - **`delete-task-list`** - Delete a task list and all its contents
+- **`get-task-lists-organized`** - Group task lists into folders by naming pattern, emoji prefix, or sharing status (`groupBy`: `category`, `shared`, or `type`; `includeIds` adds an ID reference)
 
 ### Tasks (Main Todo Items)
 
@@ -304,6 +305,11 @@ the full schema.
 - **`create-checklist-item`** - Add a new subtask to a task
 - **`update-checklist-item`** - Update subtask text or completion status
 - **`delete-checklist-item`** - Remove a specific subtask
+
+### Maintenance and Diagnostics
+
+- **`archive-completed-tasks`** - Move completed tasks older than `olderThanDays` (default 90) from one list to another; `dryRun` previews without moving
+- **`test-graph-api-exploration`** - Run read-only Graph API probes (`odata-select`, `odata-expand`, `headers`, `extensions`, or `all`) to look for hidden list properties; for debugging, not everyday use
 
 ## Architecture
 
