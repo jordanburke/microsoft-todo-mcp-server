@@ -56,7 +56,7 @@ migration is `.smoke/v1.2.0-before-somamcp.json`, recorded on v1.2.0. Graph reje
 
 Built with **ts-builds 4.0.2** (tsdown, vitest 5) on **pnpm 12**. Non-obvious, load-bearing constraints:
 
-- **Node >= 22.12 required.** ts-builds 4 bundles vitest 5, whose `engines.node` is `^22.12.0 || ^24.0.0 || >=26.0.0`. CI runs Node 22.x/24.x; the publish workflow reads `.nvmrc`, pinned to the exact patch `24.21.0` so a non-retryable release job does not vary with the runner's tool cache. **pnpm, not npm, performs the OIDC token exchange** for trusted publishing — it never shells out to the npm CLI — so `packageManager` (pnpm 12.16.1) is the version that gates publishing, not the bundled npm. Proven under pnpm 12.16.1: v1.1.4 published on 2026-10-28, the repo's first CI release, signing a provenance statement over OIDC with no npm token anywhere.
+- **Node 22.18+ or 24.11+ required to build.** tsdown 0.22 declares `engines.node` `^22.18.0 || >=24.11.0`, the tightest floor in the toolchain; ts-builds 4 and its vitest 5 need only `^22.12.0 || ^24.0.0 || >=26.0.0`. The published server itself runs on Node 20+. CI runs Node 22.x/24.x; the publish workflow reads `.nvmrc`, pinned to the exact patch `24.21.0` so a non-retryable release job does not vary with the runner's tool cache. **pnpm, not npm, performs the OIDC token exchange** for trusted publishing — it never shells out to the npm CLI — so `packageManager` (pnpm 12.16.1) is the version that gates publishing, not the bundled npm. Proven under pnpm 12.16.1: v1.1.4 published on 2026-10-28, the repo's first CI release, signing a provenance statement over OIDC with no npm token anywhere.
 - **Keep `globals` in `publicHoistPattern`** (`pnpm-workspace.yaml`). `eslint.config.js` imports `globals`, which `*eslint*` does not match. Without the explicit hoist line, resolution falls back to pnpm's incidental `.pnpm` virtual-store hoist — passes locally but **fails CI** with `Cannot find package 'globals'`. It is load-bearing, not redundant; ts-builds `init` only adds it for new projects, and `doctor` does not retro-fit this file.
 - **First-party release-age excludes are globs, not pins.** `minimumReleaseAgeExclude` is `*functype*` + `ts-builds`. `pnpm add` auto-adds per-version pins for first-party packages within the 24h cooldown — collapse them back to the glob (pins re-trip on every release).
 - **`allowBuilds: esbuild: false`** is required under pnpm's `strictDepBuilds` (esbuild's binary ships via `@esbuild/<platform>` optional deps; build script not needed).
@@ -68,9 +68,9 @@ Built with **ts-builds 4.0.2** (tsdown, vitest 5) on **pnpm 12**. Non-obvious, l
 
 This is a Model Context Protocol (MCP) server that enables AI assistants to interact with Microsoft To Do via the Microsoft Graph API. The codebase follows a modular architecture with four main components:
 
-1. **MCP Server** (`src/todo-index.ts`): Core server implementing the MCP protocol with 13 tools for Microsoft To Do operations
-2. **CLI Wrapper** (`src/cli.ts`): Executable entry point that handles token loading from environment or file
-3. **Auth Server** (`src/auth-server.js`): Express server implementing OAuth 2.0 flow with MSAL
+1. **MCP Server** (`src/todo-index.ts`): Built on somamcp (MCP SDK 2.x underneath), serving 17 tools over stdio: 16 for Microsoft To Do plus somamcp's `info`
+2. **CLI Wrapper** (`src/cli.ts`): Executable entry point; it only calls `startServer()`, and `src/token-manager.ts` finds and refreshes the tokens
+3. **Auth Server** (`src/auth-server.ts`): Express server implementing OAuth 2.0 flow with MSAL
 4. **Config Generator** (`src/create-mcp-config.ts`): Utility to create MCP configuration files
 
 ### Key Architectural Patterns
@@ -90,7 +90,7 @@ The server communicates with Microsoft Graph API v1.0:
 
 ### Environment Configuration
 
-- `MSTODO_TOKEN_FILE`: Custom path for tokens.json (defaults to ./tokens.json)
+- `MSTODO_TOKEN_FILE`: Custom path for tokens.json. Without it, the token manager uses the per-user config directory (`~/.config/microsoft-todo-mcp/tokens.json`, or `%APPDATA%\microsoft-todo-mcp\tokens.json` on Windows), then falls back to `./tokens.json` and migrates it
 - `.env` file required for authentication with CLIENT_ID, CLIENT_SECRET, TENANT_ID, REDIRECT_URI
 
 ## Important Notes
