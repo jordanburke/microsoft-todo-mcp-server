@@ -123,7 +123,7 @@ export class TokenManager {
     // 3. The legacy ./tokens.json, migrated to the token file as found
     const legacy = readTokenFile(join(process.cwd(), "tokens.json"), "legacy token file")
     if (legacy.isSome()) {
-      this.saveTokens(legacy.value)
+      this.persist(legacy.value)
       return legacy.value
     }
 
@@ -149,8 +149,10 @@ export class TokenManager {
     const pending = this.inFlight.filter((f) => f.refreshToken === refreshToken)
     if (pending.isSome()) return pending.value.renewal
 
-    const renewal = this.renew(refreshToken).finally(() => {
-      this.inFlight = None()
+    const renewal: Promise<TokenData | null> = this.renew(refreshToken).finally(() => {
+      // Clear only this renewal's entry: a renewal for another refresh token may have
+      // replaced it meanwhile.
+      if (this.inFlight.filter((f) => f.renewal === renewal).isSome()) this.inFlight = None()
     })
     this.inFlight = Some({ refreshToken, renewal })
     return renewal
@@ -201,9 +203,22 @@ export class TokenManager {
       tenantId,
     }
 
-    this.saveTokens(newTokens)
+    this.persist(newTokens)
     await this.updateClaudeConfig(newTokens)
     return newTokens
+  }
+
+  // Keep the tokens in memory, and write them to the token file if it can be written. A
+  // read-only or full disk must not turn a working renewal into a failed call: the tokens
+  // stay usable for this process, and the failure is logged.
+  private persist(tokens: StoredTokenData): void {
+    Try(() => this.saveTokens(tokens)).fold(
+      (error) => {
+        this.currentTokens = Some(tokens)
+        console.error(`Could not write the token file ${this.tokenFilePath}:`, error)
+      },
+      () => undefined,
+    )
   }
 
   saveTokens(tokens: StoredTokenData): void {

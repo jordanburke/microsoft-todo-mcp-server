@@ -97,7 +97,11 @@ export const graphRequest = <T>(
 ): IO<never, GraphError, T> =>
   send<T>(method, url, token, body)
     .catchAll((error) => renewAndRetry<T>(error, method, url, token, body))
-    .mapError((error) => classify(error))
+    .mapError((error) => {
+      const classified = classify(error)
+      console.error(`Graph request failed: ${method} ${url}: ${graphErrorText(classified)}`)
+      return classified
+    })
     .tap((data) => console.error(`Response received: ${JSON.stringify(data ?? null).substring(0, 200)}...`))
 
 /**

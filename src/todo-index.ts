@@ -76,7 +76,14 @@ async function accountEmail(): Promise<Option<string>> {
 
 // Whether the account looks personal (outlook.com and the like), logging a warning if so.
 async function isPersonalMicrosoftAccount(): Promise<boolean> {
-  const email = (await accountEmail()).orElse("")
+  // Only a warning hangs on this, so no failure here may stop the server starting.
+  const email = await accountEmail().then(
+    (address) => address.orElse(""),
+    (error) => {
+      console.error("Error checking account type:", error)
+      return ""
+    },
+  )
   const domain = email.split("@")[1]?.toLowerCase()
 
   if (domain && PERSONAL_DOMAINS.some((d) => domain.includes(d))) {
