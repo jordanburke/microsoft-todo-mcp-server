@@ -131,7 +131,6 @@ gh release create vX.Y.Z --title vX.Y.Z --generate-notes --verify-tag
 
 ## Known Issues (not yet fixed)
 
-- `test-graph-api-exploration` reports a failed request as `Found! Response: null`, because Graph failures return `null` rather than throwing.
 - Two calls that find the token expired at the same moment each renew it; there is no shared in-flight refresh.
 - `get-tasks` offers `orderby=title`, which Graph rejects, and `count`, which Graph ignores (the server prints the number returned).
 - `get-task-lists-organized` with `groupBy=shared` prints no list IDs, even with `includeIds`.

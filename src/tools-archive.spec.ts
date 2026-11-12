@@ -196,11 +196,16 @@ describe("test-graph-api-exploration", () => {
     expect(text).toContain('Extensions found: {\n  "value": []\n}')
   })
 
-  it("KNOWN ISSUE: all reports every missing folder endpoint as Found, because failures return null", async () => {
+  it("all reports a failed request with Graph's reason, not as Found", async () => {
     h.net.route(() => graphError(404, "itemNotFound", "nope"))
 
     const { text } = await h.callTool("test-graph-api-exploration", { testType: "all" })
 
-    expect(text).toContain("✓ /me/todo/folders: Found! Response: null...")
+    expect(text).toContain(
+      '✗ /me/todo/folders: Not found (HTTP error! status: 404, body: {"error":{"code":"itemNotFound","message":"nope"}})',
+    )
+    expect(text).toContain("📊 Test 1: Using $select=* to retrieve all properties\nError: HTTP error! status: 404")
+    expect(text).toContain("✗ $expand=extensions: HTTP error! status: 404")
+    expect(text).not.toContain("Found!")
   })
 })

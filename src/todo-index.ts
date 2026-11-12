@@ -1428,23 +1428,30 @@ server.addTool({
 
       let results = "🔍 Graph API Exploration Results\n" + "=".repeat(50) + "\n\n"
 
+      type Listing = { value?: Array<Record<string, unknown>> }
+      // Each probe reports Graph's reason when the request fails, instead of treating the
+      // failure as an empty success.
+      const probe = <T = Listing>(path: string) => graphRequest<T>(`${MS_GRAPH_BASE}${path}`, token).run()
+
       // Test 1: Try with $select=* to get all properties
       if (testType === "odata-select" || testType === "all") {
         results += "📊 Test 1: Using $select=* to retrieve all properties\n"
-        try {
-          const response = await runOrNull(graphRequest<any>(`${MS_GRAPH_BASE}/me/todo/lists?$select=*`, token))
-          if (response && response.value && response.value.length > 0) {
-            const firstList = response.value[0]
-            const properties = Object.keys(firstList)
-            results += `Found ${properties.length} properties: ${properties.join(", ")}\n`
-
-            // Show full first list as example
-            results += "\nExample list object:\n"
-            results += JSON.stringify(firstList, null, 2).substring(0, 1000) + "...\n"
-          }
-        } catch (error) {
-          results += `Error: ${error}\n`
-        }
+        results += (await probe("/me/todo/lists?$select=*")).fold(
+          (error) => `Error: ${graphErrorText(error)}\n`,
+          (response) =>
+            Option(response.value?.[0]).fold(
+              () => "",
+              (firstList) => {
+                const properties = Object.keys(firstList)
+                return (
+                  `Found ${properties.length} properties: ${properties.join(", ")}\n` +
+                  "\nExample list object:\n" +
+                  JSON.stringify(firstList, null, 2).substring(0, 1000) +
+                  "...\n"
+                )
+              },
+            ),
+        )
         results += "\n"
       }
 
@@ -1465,22 +1472,15 @@ server.addTool({
         ]
 
         for (const expand of expandOptions) {
-          try {
-            const response = await runOrNull(
-              graphRequest<any>(`${MS_GRAPH_BASE}/me/todo/lists?$expand=${expand}&$top=1`, token),
-            )
-            if (response && response.value) {
-              results += `✓ $expand=${expand}: Success - `
-              if (response.value.length > 0 && response.value[0][expand]) {
-                results += `Found data!\n`
-                results += JSON.stringify(response.value[0][expand], null, 2).substring(0, 500) + "...\n"
-              } else {
-                results += `No additional data returned\n`
-              }
-            }
-          } catch (error: any) {
-            results += `✗ $expand=${expand}: ${error.message || "Failed"}\n`
-          }
+          results += (await probe(`/me/todo/lists?$expand=${expand}&$top=1`)).fold(
+            (error) => `✗ $expand=${expand}: ${graphErrorText(error)}\n`,
+            (response) => {
+              const data = response.value?.[0]?.[expand]
+              return data
+                ? `✓ $expand=${expand}: Success - Found data!\n${JSON.stringify(data, null, 2).substring(0, 500)}...\n`
+                : `✓ $expand=${expand}: Success - No additional data returned\n`
+            },
+          )
         }
         results += "\n"
       }
@@ -1511,26 +1511,17 @@ server.addTool({
       // Test 4: Try extensions endpoint
       if (testType === "extensions" || testType === "all") {
         results += "📊 Test 4: Checking for extensions\n"
-        try {
-          const listsResponse = await runOrNull(
-            graphRequest<{ value: TaskList[] }>(`${MS_GRAPH_BASE}/me/todo/lists?$top=1`, token),
-          )
-
-          if (listsResponse && listsResponse.value && listsResponse.value.length > 0) {
-            const listId = listsResponse.value[0].id
-
-            // Try to get extensions
-            try {
-              const extResponse = await runOrNull(
-                graphRequest<any>(`${MS_GRAPH_BASE}/me/todo/lists/${listId}/extensions`, token),
-              )
-              results += `Extensions found: ${JSON.stringify(extResponse, null, 2)}\n`
-            } catch (error: any) {
-              results += `No extensions endpoint: ${error.message}\n`
-            }
+        const lists = await probe<{ value?: TaskList[] }>("/me/todo/lists?$top=1")
+        if (lists.isLeft()) {
+          results += `Error: ${graphErrorText(lists.value)}\n`
+        } else {
+          const listId = lists.value.value?.[0]?.id
+          if (listId) {
+            results += (await probe<unknown>(`/me/todo/lists/${listId}/extensions`)).fold(
+              (error) => `No extensions endpoint: ${graphErrorText(error)}\n`,
+              (extensions) => `Extensions found: ${JSON.stringify(extensions, null, 2)}\n`,
+            )
           }
-        } catch (error) {
-          results += `Error: ${error}\n`
         }
         results += "\n"
       }
@@ -1547,12 +1538,10 @@ server.addTool({
         ]
 
         for (const endpoint of endpoints) {
-          try {
-            const response = await runOrNull(graphRequest<any>(`${MS_GRAPH_BASE}${endpoint}`, token))
-            results += `✓ ${endpoint}: Found! Response: ${JSON.stringify(response).substring(0, 200)}...\n`
-          } catch (error: any) {
-            results += `✗ ${endpoint}: Not found (${error.message || "Failed"})\n`
-          }
+          results += (await probe<unknown>(endpoint)).fold(
+            (error) => `✗ ${endpoint}: Not found (${graphErrorText(error)})\n`,
+            (response) => `✓ ${endpoint}: Found! Response: ${JSON.stringify(response).substring(0, 200)}...\n`,
+          )
         }
       }
 
