@@ -63,6 +63,9 @@ export class TokenManager {
   private envTokens: Option<TokenData> = None()
   // A renewal under way, keyed by the refresh token it spends. Entra rotates the refresh
   // token on use, so a second concurrent renewal with the same one would race the first.
+  // True while the latest renewal could not be written to the token file, so the file
+  // holds older tokens than this process does.
+  private unsaved = false
   private inFlight: Option<{ refreshToken: string; renewal: Promise<TokenData | null> }> = None()
 
   constructor() {
@@ -129,8 +132,9 @@ export class TokenManager {
       return (await this.refreshToken(live.refreshToken)) ?? live
     }
 
-    // 2. The token file
-    const stored = readTokenFile(this.tokenFilePath, "token file")
+    // 2. The token file, unless it is behind what this process renewed
+    const stored =
+      this.unsaved && this.currentTokens.isSome() ? this.currentTokens : readTokenFile(this.tokenFilePath, "token file")
     if (stored.isSome()) {
       this.currentTokens = stored
       const tokens = stored.value
@@ -238,9 +242,12 @@ export class TokenManager {
     Try(() => this.saveTokens(tokens)).fold(
       (error) => {
         this.currentTokens = Some(tokens)
+        this.unsaved = true
         console.error(`Could not write the token file ${this.tokenFilePath}:`, error)
       },
-      () => undefined,
+      () => {
+        this.unsaved = false
+      },
     )
   }
 

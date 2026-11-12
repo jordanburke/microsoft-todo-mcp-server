@@ -528,6 +528,19 @@ describe.runIf(canMakeReadOnly)("a token file that cannot be written", () => {
     expect(readTokenFile().accessToken).toBe("stale")
   })
 
+  it("keeps using the renewed token instead of renewing again on every call", async () => {
+    writeTokenFile({ accessToken: "stale", refreshToken: "r", expiresAt: 0 })
+    chmodSync(tokenFile, 0o444)
+    const fetchMock = stubRefresh("renewed")
+    const manager = new TokenManager()
+
+    await manager.getTokens()
+    const again = await manager.getTokens()
+
+    expect(again?.accessToken).toBe("renewed")
+    expect(fetchMock).toHaveBeenCalledOnce()
+  })
+
   it("still returns legacy tokens it could not copy", async () => {
     mkdirSync(join(dir, "ro"))
     process.env.MSTODO_TOKEN_FILE = join(dir, "ro", "tokens.json")
