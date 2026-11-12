@@ -1,11 +1,5 @@
 // Authentication server for Microsoft Todo MCP service
-import {
-  AccountInfo,
-  AuthenticationResult,
-  ConfidentialClientApplication,
-  Configuration,
-  LogLevel,
-} from "@azure/msal-node"
+import { ConfidentialClientApplication, Configuration, LogLevel } from "@azure/msal-node"
 import dotenv from "dotenv"
 import express, { Request, Response } from "express"
 import fs from "fs"
@@ -45,9 +39,6 @@ if (tenantId === "common") {
   console.log("Authentication type: Organizations only (multi-tenant)")
 } else if (tenantId === "consumers") {
   console.log("Authentication type: Personal accounts only")
-  console.log(
-    "WARNING: Microsoft To Do API has limitations for personal accounts (MailboxNotEnabledForRESTAPI error may occur)",
-  )
 } else {
   console.log(`Authentication type: Single tenant (${tenantId})`)
 }
@@ -101,95 +92,6 @@ console.log("MSAL application created")
 // Setup a test route to check if server is working
 app.get("/test", (req: Request, res: Response) => {
   res.send("Auth server is running correctly")
-})
-
-// Helper function to refresh an access token
-async function refreshAccessToken(): Promise<{
-  success: boolean
-  error?: any
-  response?: AuthenticationResult | null
-  accessToken?: string
-  expiresAt?: number
-}> {
-  try {
-    // Get account info from the token cache
-    const tokenCache = cca.getTokenCache()
-    const accounts = await tokenCache.getAllAccounts()
-
-    if (accounts.length === 0) {
-      console.log("No accounts found in the token cache")
-      return { success: false, error: "No accounts found in token cache" }
-    }
-
-    // Get the first account (we should have only one in this scenario)
-    const account = accounts[0]
-    console.log("Found account in token cache:", {
-      username: account.username,
-      localAccountId: account.localAccountId,
-      tenantId: account.tenantId,
-    })
-
-    // Create a silent request using the account
-    const silentRequest = {
-      account: account,
-      scopes: scopes,
-      forceRefresh: true,
-    }
-
-    console.log("Attempting to acquire token silently...")
-    const response = await cca.acquireTokenSilent(silentRequest)
-
-    console.log("Token refreshed successfully")
-    return {
-      success: true,
-      response: response,
-      accessToken: response!.accessToken,
-      expiresAt: Date.now() + ((response as any).expiresIn || 3600) * 1000 - 5 * 60 * 1000,
-    }
-  } catch (error) {
-    console.error("Error refreshing token silently:", error)
-    return {
-      success: false,
-      error: error,
-    }
-  }
-}
-
-// Update refresh endpoint to use acquireTokenSilent
-app.get("/refresh", async (req: Request, res: Response) => {
-  try {
-    const result = await refreshAccessToken()
-
-    if (result.success) {
-      // Save updated token data
-      const tokenData = {
-        accessToken: result.accessToken,
-        expiresAt: result.expiresAt,
-        tokenType: result.response!.tokenType,
-        scopes: result.response!.scopes,
-      }
-
-      // Save updated token data
-      fs.writeFileSync(TOKEN_FILE_PATH, JSON.stringify(tokenData, null, 2), "utf8")
-
-      res.json({
-        success: true,
-        message: "Token refreshed successfully",
-        expiresAt: new Date(result.expiresAt!).toISOString(),
-      })
-    } else {
-      // If silent refresh fails, redirect to login
-      console.log("Silent token refresh failed, redirecting to login")
-      res.json({
-        success: false,
-        message: "Token refresh failed, please login again",
-        redirectUrl: "/",
-      })
-    }
-  } catch (error: any) {
-    console.error("Error in refresh route:", error)
-    res.status(500).send(`Error refreshing token: ${error.message}`)
-  }
 })
 
 // Add a client credentials flow endpoint
@@ -261,7 +163,6 @@ app.get("/silentLogin", async (req: Request, res: Response) => {
 app.get("/", (req: Request, res: Response) => {
   console.log("Root route accessed, generating auth URL...")
 
-  // Display information about potential issues for personal accounts
   let authInfo = `
     <html>
     <head>
@@ -269,7 +170,6 @@ app.get("/", (req: Request, res: Response) => {
       <style>
         body { font-family: Arial, sans-serif; margin: 40px; line-height: 1.6; }
         .container { max-width: 800px; margin: 0 auto; }
-        .warning { background-color: #fff3cd; border: 1px solid #ffeeba; padding: 15px; border-radius: 4px; margin-bottom: 20px; }
         .primary-button { background-color: #0078d4; color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; }
       </style>
     </head>
@@ -277,19 +177,6 @@ app.get("/", (req: Request, res: Response) => {
       <div class="container">
         <h1>Microsoft To Do MCP Authentication</h1>
   `
-
-  // Add warning for personal accounts
-  if (tenantId === "consumers" || tenantId === "common") {
-    authInfo += `
-        <div class="warning">
-          <h3>⚠️ Important Note for Personal Microsoft Accounts</h3>
-          <p>The Microsoft Graph API has limitations for personal Microsoft accounts (outlook.com, hotmail.com, live.com, etc.). 
-          The To Do API is primarily designed for Microsoft 365 business accounts, not personal accounts.</p>
-          <p>If you use a personal Microsoft account, you may encounter a <strong>"MailboxNotEnabledForRESTAPI"</strong> error. 
-          This is a Microsoft service limitation, not an issue with this application's code or authentication setup.</p>
-        </div>
-    `
-  }
 
   authInfo += `
         <p>Click the button below to authenticate with Microsoft and grant access to your To Do tasks.</p>
@@ -459,27 +346,6 @@ app.get("/callback", async (req: Request, res: Response) => {
       ? `${refreshToken.substring(0, 10)}...${refreshToken.substring(refreshToken.length - 5)}`
       : "Not provided"
 
-    // Check if the account is a personal account
-    const isPersonalAccount =
-      response.account &&
-      (response.account.username.includes("@outlook.com") ||
-        response.account.username.includes("@hotmail.com") ||
-        response.account.username.includes("@live.com") ||
-        response.account.username.includes("@msn.com"))
-
-    let warningMessage = ""
-
-    if (isPersonalAccount) {
-      warningMessage = `
-        <div class="warning">
-          <h3>⚠️ Important Note for Personal Microsoft Accounts</h3>
-          <p>You are signed in with a personal Microsoft account (${response.account!.username}).</p>
-          <p>The Microsoft Graph API has limitations for personal Microsoft accounts. The To Do API is primarily designed for Microsoft 365 business accounts, not personal accounts.</p>
-          <p>You may encounter a <strong>"MailboxNotEnabledForRESTAPI"</strong> error when trying to access To Do tasks. This is a Microsoft service limitation, not an issue with this application's code or authentication setup.</p>
-        </div>
-      `
-    }
-
     res.send(`
       <html>
       <head>
@@ -488,7 +354,6 @@ app.get("/callback", async (req: Request, res: Response) => {
           body { font-family: Arial, sans-serif; margin: 40px; line-height: 1.6; }
           .container { max-width: 800px; margin: 0 auto; }
           .success { background-color: #d4edda; border: 1px solid #c3e6cb; padding: 15px; border-radius: 4px; margin-bottom: 20px; }
-          .warning { background-color: #fff3cd; border: 1px solid #ffeeba; padding: 15px; border-radius: 4px; margin-bottom: 20px; }
           .token-details { background-color: #f8f9fa; padding: 15px; border-radius: 4px; margin-top: 20px; }
           .debug-info { margin-top: 30px; border-top: 1px solid #dee2e6; padding-top: 20px; }
         </style>
@@ -499,9 +364,7 @@ app.get("/callback", async (req: Request, res: Response) => {
             <h1>Authentication Successful!</h1>
             <p>You can now close this window and use the Microsoft Todo MCP service.</p>
           </div>
-          
-          ${warningMessage}
-          
+
           <div class="token-details">
             <h3>Token Details:</h3>
             <ul>

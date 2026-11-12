@@ -2,7 +2,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import {
-  graphError,
   type Harness,
   json,
   jwtExpiringIn,
@@ -30,43 +29,22 @@ afterEach(() => {
 })
 
 describe("auth-status", () => {
-  it("reports a live token's expiry (the JWT's exp less five minutes)", async () => {
+  it("reports a live token's expiry (the JWT's exp less five minutes), without a Graph request", async () => {
     await start({ kind: "env", accessToken: jwtExpiringIn(3600) })
-    h.net.on("GET", "/me", json({ userPrincipalName: "someone@contoso.com" }))
 
     expect((await h.callTool("auth-status")).text).toBe("Authenticated. Token expires at 11/11/2026, 12:55:00 PM.")
+    expect(h.net.calls).toHaveLength(0)
   })
 
-  it("KNOWN ISSUE: warns every personal account that To Do may not work, though it does", async () => {
+  it("does not warn personal accounts, which have full To Do API access", async () => {
     await start({ kind: "env", accessToken: jwtExpiringIn(3600) })
-    h.net.on("GET", "/me", json({ mail: "someone@outlook.com" }))
-
-    const { text } = await h.callTool("auth-status")
-
-    expect(text).toMatch(
-      /^Authenticated\. Token expires at .*\n\n⚠️ WARNING: You are using a personal Microsoft account\./,
-    )
-  })
-
-  it.each(["hotmail.com", "live.com", "msn.com", "passport.com"])("treats %s as personal", async (domain) => {
-    await start({ kind: "env", accessToken: jwtExpiringIn(3600) })
-    h.net.on("GET", "/me", json({ userPrincipalName: `someone@${domain}` }))
-
-    expect((await h.callTool("auth-status")).text).toContain("⚠️ WARNING")
-  })
-
-  it("shows no warning when /me cannot be read", async () => {
-    await start({ kind: "env", accessToken: jwtExpiringIn(3600) })
-    h.net.on("GET", "/me", graphError(403, "Forbidden", "no"))
 
     expect((await h.callTool("auth-status")).text).not.toContain("WARNING")
   })
 
   it("reports an expired token it could not renew", async () => {
     await start({ kind: "env", accessToken: jwtExpiringIn(-600) })
-    h.net
-      .onTokenRefresh(json({ error: "invalid_grant" }, 400))
-      .on("GET", "/me", graphError(401, "InvalidAuthenticationToken", "expired"))
+    h.net.onTokenRefresh(json({ error: "invalid_grant" }, 400))
 
     expect((await h.callTool("auth-status")).text).toBe(
       "Authentication expired at 11/11/2026, 11:45:00 AM. Will attempt to refresh when you call any API.",

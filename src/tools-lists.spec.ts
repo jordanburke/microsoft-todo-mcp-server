@@ -196,12 +196,15 @@ describe("get-task-lists-organized", () => {
     )
   })
 
-  it("KNOWN ISSUE: groupBy=shared prints no list IDs, even with includeIds", async () => {
+  it("appends the ID reference to groupBy=shared too", async () => {
     h.net.on("GET", "/me/todo/lists", json({ value: LISTS }))
 
     const { text } = await h.callTool("get-task-lists-organized", { groupBy: "shared", includeIds: true })
 
-    expect(text).not.toContain("L-default")
+    expect(text).toContain(
+      "📋 List IDs Reference:\n" + "-".repeat(50) + "\nTasks: L-default\nFlagged email: L-flagged\n",
+    )
+    expect(text).toContain("Ideas: L-plain\n")
   })
 
   it("treats groupBy=type like the default category view", async () => {

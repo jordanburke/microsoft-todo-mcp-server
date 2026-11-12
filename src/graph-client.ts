@@ -10,7 +10,7 @@ export const MS_GRAPH_BASE = "https://graph.microsoft.com/v1.0"
 const USER_AGENT = "microsoft-todo-mcp-server/1.0"
 const MAX_PAGES = 100
 
-/** Graph refused the mailbox: To Do's API is not enabled for this account. */
+/** Graph refused the mailbox: Microsoft has not enabled the To Do API for it. */
 export type MailboxNotEnabled = { readonly _tag: "MailboxNotEnabled"; readonly status: number; readonly body: string }
 /** A paged collection did not end within MAX_PAGES pages. */
 export type PageLimit = { readonly _tag: "PageLimit"; readonly pages: number }
@@ -32,16 +32,14 @@ const MAILBOX_BANNER = `
 =================================================================
 ERROR: MailboxNotEnabledForRESTAPI
 
-The Microsoft To Do API is not available for personal Microsoft accounts
-(outlook.com, hotmail.com, live.com, etc.) through the Graph API.
+Microsoft has not enabled the To Do API for this account's mailbox. It is a
+Microsoft-side setting, not a problem with your sign-in or this server. To Do
+itself still works on the web and in the apps.
 
-This is a limitation of the Microsoft Graph API, not an authentication issue.
-Microsoft only allows To Do API access for Microsoft 365 business accounts.
-
-You can still use Microsoft To Do through the web interface or mobile apps,
-but API access is restricted for personal accounts.
+Personal accounts (outlook.com, live.com and so on) normally do have API
+access; this error means this particular mailbox does not.
 =================================================================
-        `
+`
 
 // One request with one token. DELETE answers 204 with no body, so it is read raw and
 // yields undefined; every other call must return JSON, and an empty or non-JSON 2xx body
@@ -130,7 +128,7 @@ export const graphErrorText = (error: unknown): string => {
     case "HttpStatusError":
       return `HTTP error! status: ${e.status}, body: ${e.body}`
     case "MailboxNotEnabled":
-      return "Microsoft To Do API is not available for personal Microsoft accounts. See console for details."
+      return "Microsoft has not enabled the To Do API for this account's mailbox (MailboxNotEnabledForRESTAPI)."
     case "PageLimit":
       return `stopped after ${MAX_PAGES} pages without reaching the end of the collection`
     case "NetworkError":
@@ -154,6 +152,3 @@ export const runOrNull = async <T>(io: IO<never, GraphError, T>): Promise<T | nu
     },
     (data) => data,
   )
-
-/** One GET with no renewal or retry on 401, for the personal-account probe. */
-export const graphGetOnce = <T>(url: string, token: string): IO<never, HttpError, T> => send<T>("GET", url, token)

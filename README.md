@@ -60,7 +60,7 @@ The package provides four commands:
 
 - `microsoft-todo-mcp-server` - The MCP server
 - `mstodo` - Short alias for the MCP server
-- `mstodo-config` - Writes an `mcp.json` from `tokens.json` (see [Step 3](#step-3-configure-your-ai-assistant) for a caveat)
+- `mstodo-config` - Writes an `mcp.json` that points the server at your `tokens.json`
 - `mstodo-setup` - Guided setup. It does not yet finish on its own after you sign in, so use the steps under [Usage](#usage) instead
 
 ### Option 2: Clone and Run Locally
@@ -144,7 +144,7 @@ export MS_TODO_ACCESS_TOKEN=your_access_token
 export MS_TODO_REFRESH_TOKEN=your_refresh_token
 ```
 
-These two are a starting point, not a live store — nothing rewrites your environment when a token is renewed. A renewal is kept for the rest of the session and written to the token file, and the environment pair is not consulted again.
+These two are a starting point, not a live store — nothing rewrites your environment when a token is renewed. A renewal is kept for the rest of the session and written to the token file. On later launches the server uses that token file instead, as long as the environment still holds the same pair it was renewed from; set a new pair, for example after signing in again, and it starts over from that.
 
 How the expiry is known depends on your account type. Work and school accounts get a JWT access token, so the server reads the real deadline from it and renews 5 minutes early. Personal accounts get an opaque token, where there is nothing to read and the server assumes an hour from when it first saw the value. Either way renewal needs `CLIENT_ID` and `CLIENT_SECRET`; without them the server cannot refresh, and calls start failing once the supplied token runs out.
 
@@ -215,7 +215,11 @@ Add `"env": { "MSTODO_TOKEN_FILE": "/path/to/tokens.json" }` if the file is not 
 
 **Cursor:** add the same `mcpServers` entry to `~/.cursor/mcp.json`.
 
-**About `mstodo-config` and token environment variables:** `pnpm run create-config` (or `mstodo-config`) writes an `mcp.json` that passes `MS_TODO_ACCESS_TOKEN` and `MS_TODO_REFRESH_TOKEN` instead of a token file. Renewing those also needs `CLIENT_ID` and `CLIENT_SECRET` in the same `env` block, plus `TENANT_ID` unless it is `organizations`. Without them, calls start failing when the access token expires, within about an hour of signing in. The token-file setup above avoids this.
+**About `mstodo-config`:** `pnpm run create-config` (or `mstodo-config`) writes an `mcp.json` with the entry above, plus `MSTODO_TOKEN_FILE` set to the token file's absolute path. It copies no tokens into the config. It warns if the token file lacks `clientId` and `clientSecret`, which renewal needs.
+
+**About token environment variables:** if you pass `MS_TODO_ACCESS_TOKEN` and `MS_TODO_REFRESH_TOKEN` instead, renewing them also needs `CLIENT_ID` and `CLIENT_SECRET` in the same `env` block, plus `TENANT_ID` unless it is `organizations`. Without them, calls start failing when the access token expires, within about an hour of signing in. The token-file setup above avoids this.
+
+**Upgrading from an older version:** older versions copied renewed tokens into Claude Desktop's config as `MS_TODO_ACCESS_TOKEN` and `MS_TODO_REFRESH_TOKEN`, and older `mstodo-config` wrote them into `mcp.json`. The server now picks up the token file when it holds the same refresh token, so these setups renew again. The cleaner fix is to delete those two variables from the entry, so the server reads only the token file. Do the same if you sign in again: a fresh token file is ignored while an old pair is still set.
 
 ### Available Scripts
 
@@ -227,7 +231,7 @@ pnpm run validate     # Format, lint, typecheck, test and build
 pnpm test             # Run the tests
 
 # Running the Server
-pnpm start            # Run MCP server directly
+pnpm start            # Run MCP server (dist/cli.js)
 pnpm run cli          # Run MCP server via CLI wrapper
 npx microsoft-todo-mcp-server  # Run globally installed version
 
@@ -346,12 +350,11 @@ the full schema.
 ### Personal Microsoft Accounts
 
 - Personal accounts (outlook.com, hotmail.com, live.com) work. A live.com account tested on 2026-10-31 had full access: 30 lists, paging through a 399-task list, writes and recurring tasks
-- `auth-status` and the sign-in page still warn that personal accounts may hit `MailboxNotEnabledForRESTAPI`. If you do see that error, Microsoft has not enabled the To Do API for that mailbox. It is a Microsoft-side limit, not a bug in this server
+- If you see `MailboxNotEnabledForRESTAPI`, Microsoft has not enabled the To Do API for that mailbox. It is a Microsoft-side limit, not a bug in this server, and the server says so when it happens
 
 ### API Limitations
 
 - Rate limits apply according to Microsoft's policies
-- Some features may be unavailable for personal accounts
 - Shared lists have limited functionality
 
 ## Troubleshooting

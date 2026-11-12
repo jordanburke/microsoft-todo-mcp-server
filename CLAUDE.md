@@ -34,7 +34,7 @@ auth server is stopped, and then reports failure.
 
 ```bash
 pnpm run cli         # Run MCP server via CLI wrapper
-pnpm start           # Run MCP server directly
+pnpm start           # Run MCP server (dist/cli.js)
 ```
 
 ### Live Smoke (before/after comparison)
@@ -84,7 +84,7 @@ This is a Model Context Protocol (MCP) server that enables AI assistants to inte
 2. **Graph Client** (`src/graph-client.ts`): Graph requests as functype `IO` over `Http.client`, with a typed error channel (`GraphError` = `HttpError | MailboxNotEnabled | PageLimit`)
 3. **CLI Wrapper** (`src/cli.ts`): Executable entry point; it only calls `startServer()`, and `src/token-manager.ts` finds and refreshes the tokens
 4. **Auth Server** (`src/auth-server.ts`): Express server implementing OAuth 2.0 flow with MSAL
-5. **Config Generator** (`src/create-mcp-config.ts`): Utility to create MCP configuration files
+5. **Config Generator** (`src/create-mcp-config.ts`): writes an `mcp.json` whose entry sets `MSTODO_TOKEN_FILE` to the token file; it copies no tokens
 
 ### somamcp Notes
 
@@ -98,11 +98,11 @@ This is a Model Context Protocol (MCP) server that enables AI assistants to inte
 ### Key Architectural Patterns
 
 - **functype at the edges**: a tool builds its request as an `IO`, runs it once at the MCP boundary with `.run()`, and folds the `Either` into text (`graphErrorText` renders a failure). No module-level error state. A 401 renews the token and retries once with the same body; paging follows `@odata.nextLink` to the end or the limit, capped at 100 pages. DELETE is read raw (Graph's 204 has no body); every other reply must be JSON
-- **Token Management**: Tokens are stored in `tokens.json` and renewed 5 minutes before expiry, and again whenever Graph returns 401 (`refreshRejectedToken`). `TokenManager` keeps a Promise API but holds tokens as `Option`, reads files with `Try`, renews through `Http`, and joins a renewal already under way for the same refresh token
+- **Token Management**: Tokens are stored in `tokens.json` and renewed 5 minutes before expiry, and again whenever Graph returns 401 (`refreshRejectedToken`). `TokenManager` keeps a Promise API but holds tokens as `Option`, reads files with `Try`, renews through `Http`, and joins a renewal already under way for the same refresh token. A renewal from the env pair records the pair's fingerprint (`seededFrom`, a truncated SHA-256 of the refresh token); a later launch with that same pair, or with a file holding the same refresh token (as older versions left them), uses the token file instead. The token manager never writes to Claude Desktop's config
 - **Multi-tenant Support**: Configurable for different Microsoft account types via TENANT_ID
-- **Error Handling**: Special handling for personal Microsoft accounts (MailboxNotEnabledForRESTAPI)
+- **Error Handling**: `MailboxNotEnabledForRESTAPI` becomes its own error (`MailboxNotEnabled`) with an explanation; nothing warns personal accounts up front, because they work
 - **Type Safety**: Strict TypeScript with Zod 4 schemas for parameter validation
-- **Tests** live beside the code as `src/*.spec.ts`. The repo's `./tokens.json` is a real credential, and a successful refresh rewrites Claude Desktop's config under `$HOME`, so specs `chdir` into a temp directory and point `MSTODO_TOKEN_FILE`, `HOME` and `APPDATA` there before any `TokenManager` reads tokens. `src/test-support/graph-harness.ts` does this, then imports a fresh `todo-index.ts` (whose import builds the token-manager singleton) and drives tools through `server.fetch()`
+- **Tests** live beside the code as `src/*.spec.ts`. The repo's `./tokens.json` is a real credential, and the token manager writes under `$HOME`, so specs `chdir` into a temp directory and point `MSTODO_TOKEN_FILE`, `HOME` and `APPDATA` there before any `TokenManager` reads tokens. `src/test-support/graph-harness.ts` does this, then imports a fresh `todo-index.ts` (whose import builds the token-manager singleton) and drives tools through `server.fetch()`
 - **`src/test-support/setup.ts`** (a vitest `setupFiles`) runs before any spec file loads: it makes `fetch` throw, and points `HOME`, `APPDATA`, the token file and the cwd at a throwaway directory. That holds even for code that captures `fetch` or reads `HOME` at import time
 - **Specs touch only the boundaries**: JSON-RPC in, a stubbed `globalThis.fetch` out (`FakeNetwork`: routes per method and path, separate token-endpoint routes). A request no route answers fails the test in `restoreNetwork(h.net)`, unless the spec sets `net.allowUnrouted`. Nothing in between is mocked, so the specs hold across a rewrite of the Graph client or token manager. Paths are compared with the query decoded, so `%24top=3` and `$top=3` match. Mocks match Graph's wire shapes: `noContent()` for a DELETE's 204 with no body, `graphError()` for its error JSON. Vitest pins `TZ=UTC` and an `en_US` locale and uses the forks pool (specs `chdir`). Date-dependent specs fake only `Date`, and start the server under the fake clock
 - **`KNOWN ISSUE:` tests pin today's wrong behaviour** from the list below. A fix flips its test in the same commit
@@ -133,13 +133,7 @@ gh release create vX.Y.Z --title vX.Y.Z --generate-notes --verify-tag
 
 ## Known Issues (not yet fixed)
 
-- `get-tasks` offers `orderby=title`, which Graph rejects, and `count`, which Graph ignores (the server prints the number returned).
-- `get-task-lists-organized` with `groupBy=shared` prints no list IDs, even with `includeIds`.
-- Env-token setups (`MS_TODO_ACCESS_TOKEN`/`MS_TODO_REFRESH_TOKEN`, as `create-mcp-config.ts` writes) cannot renew without `CLIENT_ID`/`CLIENT_SECRET` (and `TENANT_ID` unless it is `organizations`) in the env too: on the env path no stored tokens exist yet to supply them.
-- After a renewal, `TokenManager.updateClaudeConfig` writes the new tokens into a Claude Desktop entry named `microsoft-todo`. On the next launch those env tokens take precedence over the token file, and they carry no client credentials (see the previous item).
-- The auth server's `/refresh` route rewrites `tokens.json` without the refresh token or client credentials.
-- `postinstall` prints `npx microsoft-todo-mcp-server setup`, which starts the server, not setup; the setup command is `mstodo-setup`.
-- The personal-account `MailboxNotEnabledForRESTAPI` warning in `auth-status` and the sign-in page is shown to every personal account, though a live.com account works fully.
+- Env-token setups (`MS_TODO_ACCESS_TOKEN`/`MS_TODO_REFRESH_TOKEN` with no matching token file, such as an `mcp.json` from an older `mstodo-config`) cannot renew without `CLIENT_ID`/`CLIENT_SECRET` (and `TENANT_ID` unless it is `organizations`) in the env too: on the env path no stored tokens exist yet to supply them.
 
 ## Important Notes
 

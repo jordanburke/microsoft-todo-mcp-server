@@ -385,6 +385,79 @@ describe("no tokens anywhere", () => {
   })
 })
 
+describe("environment pair and token file across restarts", () => {
+  it("records which environment pair a renewal descends from, as a fingerprint", async () => {
+    process.env.MS_TODO_ACCESS_TOKEN = jwtExpiringIn(-60)
+    process.env.MS_TODO_REFRESH_TOKEN = "env-refresh"
+    stubRefresh("renewed")
+
+    await new TokenManager().getTokens()
+
+    const saved = readTokenFile()
+    expect(saved.seededFrom).toMatch(/^[0-9a-f]{16}$/)
+    expect(JSON.stringify(saved)).not.toContain("env-refresh")
+  })
+
+  it("picks up the token file on the next launch when it was renewed from the same pair", async () => {
+    process.env.MS_TODO_ACCESS_TOKEN = jwtExpiringIn(-60)
+    process.env.MS_TODO_REFRESH_TOKEN = "env-refresh"
+    const fetchMock = stubRefresh("renewed")
+    await new TokenManager().getTokens()
+
+    const relaunched = await new TokenManager().getTokens()
+
+    expect(relaunched?.accessToken).toBe("renewed")
+    expect(fetchMock).toHaveBeenCalledOnce()
+  })
+
+  it("renews from the file's rotated refresh token, not the original pair, once that expires", async () => {
+    process.env.MS_TODO_ACCESS_TOKEN = jwtExpiringIn(-60)
+    process.env.MS_TODO_REFRESH_TOKEN = "env-refresh"
+    const fetchMock = stubRefresh("renewed")
+    await new TokenManager().getTokens()
+    vi.setSystemTime(Date.now() + 2 * 3600 * 1000)
+
+    await new TokenManager().getTokens()
+
+    expect(refreshTokenSentOn(fetchMock, 1)).toBe("refreshed-refresh")
+  })
+
+  it("adopts a file holding the same refresh token, as older versions left them, and renews with its credentials", async () => {
+    // An older version renewed, wrote the token file, then copied the same pair into
+    // Claude Desktop's config as env tokens, without the client credentials.
+    delete process.env.CLIENT_ID
+    delete process.env.CLIENT_SECRET
+    process.env.MS_TODO_ACCESS_TOKEN = "copied-access"
+    process.env.MS_TODO_REFRESH_TOKEN = "copied-refresh"
+    writeTokenFile({
+      accessToken: "copied-access",
+      refreshToken: "copied-refresh",
+      expiresAt: 0,
+      clientId: "file-client",
+      clientSecret: "file-secret",
+    })
+    const fetchMock = stubRefresh("healed")
+
+    const tokens = await new TokenManager().getTokens()
+
+    expect(tokens?.accessToken).toBe("healed")
+    expect(refreshTokenSentOn(fetchMock, 0)).toBe("copied-refresh")
+    expect(new URLSearchParams(String(fetchMock.mock.calls[0][1].body)).get("client_id")).toBe("file-client")
+  })
+
+  it("starts over from a new environment pair, such as one from a fresh sign-in", async () => {
+    process.env.MS_TODO_ACCESS_TOKEN = jwtExpiringIn(-60)
+    process.env.MS_TODO_REFRESH_TOKEN = "env-refresh"
+    stubRefresh("renewed")
+    await new TokenManager().getTokens()
+
+    process.env.MS_TODO_ACCESS_TOKEN = jwtExpiringIn(3600)
+    process.env.MS_TODO_REFRESH_TOKEN = "new-sign-in"
+
+    expect((await new TokenManager().getTokens())?.accessToken).toBe(process.env.MS_TODO_ACCESS_TOKEN)
+  })
+})
+
 describe("environment pair over the token file", () => {
   it("wins even when the file holds a newer token", async () => {
     process.env.MS_TODO_ACCESS_TOKEN = jwtExpiringIn(3600)
@@ -432,27 +505,20 @@ describe("Claude Desktop config after a renewal", () => {
     writeFileSync(claudeConfig(), JSON.stringify(config))
   }
 
-  it("KNOWN ISSUE: writes the renewed tokens, without client credentials, into a microsoft-todo entry", async () => {
-    writeClaudeConfig({
+  it("is never written, even with a microsoft-todo entry", async () => {
+    const config = {
       mcpServers: {
         "microsoft-todo": { command: "npx", env: { KEEP: "1" } },
         other: { command: "x", env: { A: "b" } },
       },
-    })
+    }
+    writeClaudeConfig(config)
     writeTokenFile({ accessToken: "stale", refreshToken: "r", expiresAt: 0 })
     stubRefresh("renewed")
 
     await new TokenManager().getTokens()
 
-    expect(JSON.parse(readFileSync(claudeConfig(), "utf8"))).toEqual({
-      mcpServers: {
-        "microsoft-todo": {
-          command: "npx",
-          env: { KEEP: "1", MS_TODO_ACCESS_TOKEN: "renewed", MS_TODO_REFRESH_TOKEN: "refreshed-refresh" },
-        },
-        other: { command: "x", env: { A: "b" } },
-      },
-    })
+    expect(JSON.parse(readFileSync(claudeConfig(), "utf8"))).toEqual(config)
   })
 
   it("leaves a config without that entry untouched, and creates none", async () => {
@@ -483,6 +549,19 @@ describe.runIf(canMakeReadOnly)("a token file that cannot be written", () => {
     expect(second?.accessToken).toBe("renewed")
     expect(fetchMock).toHaveBeenCalledOnce()
     expect(readTokenFile().accessToken).toBe("stale")
+  })
+
+  it("keeps using the renewed token instead of renewing again on every call", async () => {
+    writeTokenFile({ accessToken: "stale", refreshToken: "r", expiresAt: 0 })
+    chmodSync(tokenFile, 0o444)
+    const fetchMock = stubRefresh("renewed")
+    const manager = new TokenManager()
+
+    await manager.getTokens()
+    const again = await manager.getTokens()
+
+    expect(again?.accessToken).toBe("renewed")
+    expect(fetchMock).toHaveBeenCalledOnce()
   })
 
   it("still returns legacy tokens it could not copy", async () => {
