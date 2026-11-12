@@ -77,7 +77,7 @@ export const redirectPatternProblem = (pattern: string): string | undefined => {
   if (!URL.canParse(`${scheme}://${host}/`)) return `${unsafe} has a host that is not valid`
   const loopback = LOOPBACK.includes(host)
   if (scheme === "http" && !loopback) return `${unsafe} must use https unless its host is localhost`
-  if (port !== undefined && !/^\d+$/.test(port) && !(loopback && port === "*"))
+  if (port !== undefined && !/^\d{1,5}$/.test(port) && !(loopback && port === "*"))
     return `${unsafe} may leave the port open only for localhost`
   if (port !== undefined && port !== "*" && (Number(port) < 1 || Number(port) > 65535))
     return `${unsafe} has a port out of range`

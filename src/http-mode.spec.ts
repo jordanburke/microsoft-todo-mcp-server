@@ -122,6 +122,7 @@ describe("redirectPatternProblem", () => {
     "https://claude.ai:0/*",
     "https://claude.ai:65536/*",
     "https://app.example.com:99999/cb",
+    "https://claude.ai:000080/*",
     "https://1.2.3.999/*",
     "https://[:::]/*",
     "https://[1::2::3]/*",
