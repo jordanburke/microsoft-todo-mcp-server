@@ -124,7 +124,7 @@ describe("archive-completed-tasks", () => {
     expect(text).toContain("⚠️ Failed to archive 1 tasks:\n- Done other\n")
   })
 
-  it("KNOWN ISSUE: counts a task as archived even when deleting it from the source fails", async () => {
+  it("reports a task it copied but could not delete from the source, and does not count it", async () => {
     h.net
       .on("GET", COMPLETED, json({ value: [OLD] }))
       .on("POST", "/me/todo/lists/DST/tasks", json({ id: "copy" }, 201))
@@ -132,7 +132,10 @@ describe("archive-completed-tasks", () => {
 
     const { text } = await h.callTool("archive-completed-tasks", { sourceListId: "SRC", targetListId: "DST" })
 
-    expect(text).toContain("Successfully archived 1 of 1 tasks")
+    expect(text).toBe(
+      "📦 Archive Complete\nSuccessfully archived 0 of 1 tasks\nTasks completed before 8/13/2026 were moved.\n" +
+        "\n⚠️ Copied 1 tasks to the archive list but could not delete them from the source list, so they are now in both:\n- Done old\n",
+    )
   })
 
   it("says so when nothing is old enough", async () => {

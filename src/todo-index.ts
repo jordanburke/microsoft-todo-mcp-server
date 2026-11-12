@@ -1363,8 +1363,8 @@ server.addTool({
       }
 
       // One task at a time: copy it to the target list, then delete it from the source.
-      // True when the copy was created. KNOWN ISSUE: the delete's outcome is not checked.
-      const archiveOne = (task: Task): IO<never, never, boolean> =>
+      type Outcome = "archived" | "notCopied" | "notRemoved"
+      const archiveOne = (task: Task): IO<never, never, Outcome> =>
         graphRequest(`${MS_GRAPH_BASE}/me/todo/lists/${targetListId}/tasks`, token, "POST", {
           title: task.title,
           status: "completed",
@@ -1375,19 +1375,22 @@ server.addTool({
           reminderDateTime: task.reminderDateTime,
           categories: task.categories,
         })
+          .map((): Outcome => "notRemoved")
           .flatMap(() =>
-            IO.async(() =>
-              runOrNull(
-                graphRequest<void>(`${MS_GRAPH_BASE}/me/todo/lists/${sourceListId}/tasks/${task.id}`, token, "DELETE"),
-              ),
-            ),
+            graphRequest<void>(`${MS_GRAPH_BASE}/me/todo/lists/${sourceListId}/tasks/${task.id}`, token, "DELETE")
+              .map((): Outcome => "archived")
+              .recover<Outcome>("notRemoved"),
           )
-          .map(() => true)
-          .recover(false)
+          .recover<Outcome>("notCopied")
 
-      const archived = (await IO.forEach(tasksToArchive, archiveOne).run()).orElse(tasksToArchive.map(() => false))
-      const successCount = archived.filter(Boolean).length
-      const failedTasks = tasksToArchive.filter((_, i) => !archived[i]).map((task) => task.title)
+      const outcomes = (await IO.forEach(tasksToArchive, archiveOne).run()).orElse(
+        tasksToArchive.map((): Outcome => "notCopied"),
+      )
+      const titlesWith = (outcome: Outcome) =>
+        tasksToArchive.filter((_, i) => outcomes[i] === outcome).map((task) => task.title)
+      const successCount = titlesWith("archived").length
+      const failedTasks = titlesWith("notCopied")
+      const notRemoved = titlesWith("notRemoved")
 
       let result = `📦 Archive Complete\n`
       result += `Successfully archived ${successCount} of ${tasksToArchive.length} tasks\n`
@@ -1395,9 +1398,12 @@ server.addTool({
 
       if (failedTasks.length > 0) {
         result += `\n⚠️ Failed to archive ${failedTasks.length} tasks:\n`
-        failedTasks.forEach((title) => {
-          result += `- ${title}\n`
-        })
+        result += failedTasks.map((title) => `- ${title}\n`).join("")
+      }
+
+      if (notRemoved.length > 0) {
+        result += `\n⚠️ Copied ${notRemoved.length} tasks to the archive list but could not delete them from the source list, so they are now in both:\n`
+        result += notRemoved.map((title) => `- ${title}\n`).join("")
       }
 
       return reply(result)
