@@ -162,7 +162,7 @@ describe("failures", () => {
     h.net.onTokenRefresh(json({ error: "invalid_grant" }, 400))
 
     expect((await h.callTool("create-task", { listId: "L1", title: "x" })).text).toBe(
-      "Failed to create task in list: L1: Microsoft To Do API is not available for personal Microsoft accounts. See console for details.",
+      "Failed to create task in list: L1: Microsoft has not enabled the To Do API for this account's mailbox (MailboxNotEnabledForRESTAPI).",
     )
   })
 

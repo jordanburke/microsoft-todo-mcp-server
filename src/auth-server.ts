@@ -39,9 +39,6 @@ if (tenantId === "common") {
   console.log("Authentication type: Organizations only (multi-tenant)")
 } else if (tenantId === "consumers") {
   console.log("Authentication type: Personal accounts only")
-  console.log(
-    "WARNING: Microsoft To Do API has limitations for personal accounts (MailboxNotEnabledForRESTAPI error may occur)",
-  )
 } else {
   console.log(`Authentication type: Single tenant (${tenantId})`)
 }
@@ -166,7 +163,6 @@ app.get("/silentLogin", async (req: Request, res: Response) => {
 app.get("/", (req: Request, res: Response) => {
   console.log("Root route accessed, generating auth URL...")
 
-  // Display information about potential issues for personal accounts
   let authInfo = `
     <html>
     <head>
@@ -174,7 +170,6 @@ app.get("/", (req: Request, res: Response) => {
       <style>
         body { font-family: Arial, sans-serif; margin: 40px; line-height: 1.6; }
         .container { max-width: 800px; margin: 0 auto; }
-        .warning { background-color: #fff3cd; border: 1px solid #ffeeba; padding: 15px; border-radius: 4px; margin-bottom: 20px; }
         .primary-button { background-color: #0078d4; color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; }
       </style>
     </head>
@@ -182,19 +177,6 @@ app.get("/", (req: Request, res: Response) => {
       <div class="container">
         <h1>Microsoft To Do MCP Authentication</h1>
   `
-
-  // Add warning for personal accounts
-  if (tenantId === "consumers" || tenantId === "common") {
-    authInfo += `
-        <div class="warning">
-          <h3>⚠️ Important Note for Personal Microsoft Accounts</h3>
-          <p>The Microsoft Graph API has limitations for personal Microsoft accounts (outlook.com, hotmail.com, live.com, etc.). 
-          The To Do API is primarily designed for Microsoft 365 business accounts, not personal accounts.</p>
-          <p>If you use a personal Microsoft account, you may encounter a <strong>"MailboxNotEnabledForRESTAPI"</strong> error. 
-          This is a Microsoft service limitation, not an issue with this application's code or authentication setup.</p>
-        </div>
-    `
-  }
 
   authInfo += `
         <p>Click the button below to authenticate with Microsoft and grant access to your To Do tasks.</p>
@@ -364,27 +346,6 @@ app.get("/callback", async (req: Request, res: Response) => {
       ? `${refreshToken.substring(0, 10)}...${refreshToken.substring(refreshToken.length - 5)}`
       : "Not provided"
 
-    // Check if the account is a personal account
-    const isPersonalAccount =
-      response.account &&
-      (response.account.username.includes("@outlook.com") ||
-        response.account.username.includes("@hotmail.com") ||
-        response.account.username.includes("@live.com") ||
-        response.account.username.includes("@msn.com"))
-
-    let warningMessage = ""
-
-    if (isPersonalAccount) {
-      warningMessage = `
-        <div class="warning">
-          <h3>⚠️ Important Note for Personal Microsoft Accounts</h3>
-          <p>You are signed in with a personal Microsoft account (${response.account!.username}).</p>
-          <p>The Microsoft Graph API has limitations for personal Microsoft accounts. The To Do API is primarily designed for Microsoft 365 business accounts, not personal accounts.</p>
-          <p>You may encounter a <strong>"MailboxNotEnabledForRESTAPI"</strong> error when trying to access To Do tasks. This is a Microsoft service limitation, not an issue with this application's code or authentication setup.</p>
-        </div>
-      `
-    }
-
     res.send(`
       <html>
       <head>
@@ -393,8 +354,7 @@ app.get("/callback", async (req: Request, res: Response) => {
           body { font-family: Arial, sans-serif; margin: 40px; line-height: 1.6; }
           .container { max-width: 800px; margin: 0 auto; }
           .success { background-color: #d4edda; border: 1px solid #c3e6cb; padding: 15px; border-radius: 4px; margin-bottom: 20px; }
-          .warning { background-color: #fff3cd; border: 1px solid #ffeeba; padding: 15px; border-radius: 4px; margin-bottom: 20px; }
-          .token-details { background-color: #f8f9fa; padding: 15px; border-radius: 4px; margin-top: 20px; }
+            .token-details { background-color: #f8f9fa; padding: 15px; border-radius: 4px; margin-top: 20px; }
           .debug-info { margin-top: 30px; border-top: 1px solid #dee2e6; padding-top: 20px; }
         </style>
       </head>
@@ -405,7 +365,6 @@ app.get("/callback", async (req: Request, res: Response) => {
             <p>You can now close this window and use the Microsoft Todo MCP service.</p>
           </div>
           
-          ${warningMessage}
           
           <div class="token-details">
             <h3>Token Details:</h3>

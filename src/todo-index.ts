@@ -6,14 +6,7 @@ import { createServer } from "somamcp/node"
 import { fileURLToPath } from "url"
 import { z } from "zod"
 
-import {
-  graphErrorText,
-  graphGetOnce,
-  graphRequest,
-  graphRequestAll,
-  MS_GRAPH_BASE,
-  runOrNull,
-} from "./graph-client.js"
+import { graphErrorText, graphRequest, graphRequestAll, MS_GRAPH_BASE, runOrNull } from "./graph-client.js"
 import { tokenManager } from "./token-manager.js"
 
 // Load environment variables
@@ -58,57 +51,6 @@ async function getAccessToken(): Promise<Option<string>> {
   )
 }
 
-const PERSONAL_DOMAINS = ["outlook.com", "hotmail.com", "live.com", "msn.com", "passport.com"]
-
-// The signed-in account's address, or None if it cannot be read. A single request with no
-// 401 retry: this only decides whether to show a warning.
-async function accountEmail(): Promise<Option<string>> {
-  const token = (await getAccessToken()).orNull()
-  if (token === null) return None()
-  return (await graphGetOnce<{ mail?: string; userPrincipalName?: string }>(`${MS_GRAPH_BASE}/me`, token).run()).fold(
-    (error) => {
-      console.error(`Error getting user info: ${graphErrorText(error)}`)
-      return None<string>()
-    },
-    (user) => Option(user.mail || user.userPrincipalName),
-  )
-}
-
-// Whether the account looks personal (outlook.com and the like), logging a warning if so.
-async function isPersonalMicrosoftAccount(): Promise<boolean> {
-  // Only a warning hangs on this, so no failure here may stop the server starting.
-  const email = await accountEmail().then(
-    (address) => address.orElse(""),
-    (error) => {
-      console.error("Error checking account type:", error)
-      return ""
-    },
-  )
-  const domain = email.split("@")[1]?.toLowerCase()
-
-  if (domain && PERSONAL_DOMAINS.some((d) => domain.includes(d))) {
-    console.error(`
-=================================================================
-WARNING: Personal Microsoft Account Detected
-
-Your Microsoft account (${email}) appears to be a personal account.
-Microsoft To Do API access is typically not available for personal accounts
-through the Microsoft Graph API, only for Microsoft 365 business accounts.
-
-You may encounter the "MailboxNotEnabledForRESTAPI" error when trying to
-access To Do lists or tasks. This is a limitation of the Microsoft Graph API,
-not an issue with your authentication or this application.
-
-You can still use Microsoft To Do through the web interface or mobile apps,
-but API access is restricted for personal accounts.
-=================================================================
-    `)
-    return true
-  }
-
-  return false
-}
-
 // Server tool to check authentication status
 server.addTool({
   name: "auth-status",
@@ -127,24 +69,10 @@ server.addTool({
     const isExpired = Date.now() > tokens.expiresAt
     const expiryTime = new Date(tokens.expiresAt).toLocaleString()
 
-    // Check if it's a personal account
-    const isPersonal = await isPersonalMicrosoftAccount()
-    let accountMessage = ""
-
-    if (isPersonal) {
-      accountMessage =
-        "\n\n⚠️ WARNING: You are using a personal Microsoft account. " +
-        "Microsoft To Do API access is typically not available for personal accounts " +
-        "through the Microsoft Graph API. You may encounter 'MailboxNotEnabledForRESTAPI' errors. " +
-        "This is a Microsoft limitation, not an authentication issue."
-    }
-
     if (isExpired) {
-      return reply(
-        `Authentication expired at ${expiryTime}. Will attempt to refresh when you call any API.${accountMessage}`,
-      )
+      return reply(`Authentication expired at ${expiryTime}. Will attempt to refresh when you call any API.`)
     } else {
-      return reply(`Authenticated. Token expires at ${expiryTime}.${accountMessage}`)
+      return reply(`Authenticated. Token expires at ${expiryTime}.`)
     }
   },
 })
@@ -1565,9 +1493,6 @@ server.addTool({
 // Main function to start the server
 export async function startServer(): Promise<void> {
   try {
-    // Check if using a personal Microsoft account and show warning if needed
-    await isPersonalMicrosoftAccount()
-
     // Start the server
     await server.start({ transportType: "stdio" })
 

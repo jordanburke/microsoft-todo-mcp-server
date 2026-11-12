@@ -348,12 +348,11 @@ the full schema.
 ### Personal Microsoft Accounts
 
 - Personal accounts (outlook.com, hotmail.com, live.com) work. A live.com account tested on 2026-10-31 had full access: 30 lists, paging through a 399-task list, writes and recurring tasks
-- `auth-status` and the sign-in page still warn that personal accounts may hit `MailboxNotEnabledForRESTAPI`. If you do see that error, Microsoft has not enabled the To Do API for that mailbox. It is a Microsoft-side limit, not a bug in this server
+- If you see `MailboxNotEnabledForRESTAPI`, Microsoft has not enabled the To Do API for that mailbox. It is a Microsoft-side limit, not a bug in this server, and the server says so when it happens
 
 ### API Limitations
 
 - Rate limits apply according to Microsoft's policies
-- Some features may be unavailable for personal accounts
 - Shared lists have limited functionality
 
 ## Troubleshooting

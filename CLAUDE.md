@@ -100,7 +100,7 @@ This is a Model Context Protocol (MCP) server that enables AI assistants to inte
 - **functype at the edges**: a tool builds its request as an `IO`, runs it once at the MCP boundary with `.run()`, and folds the `Either` into text (`graphErrorText` renders a failure). No module-level error state. A 401 renews the token and retries once with the same body; paging follows `@odata.nextLink` to the end or the limit, capped at 100 pages. DELETE is read raw (Graph's 204 has no body); every other reply must be JSON
 - **Token Management**: Tokens are stored in `tokens.json` and renewed 5 minutes before expiry, and again whenever Graph returns 401 (`refreshRejectedToken`). `TokenManager` keeps a Promise API but holds tokens as `Option`, reads files with `Try`, renews through `Http`, and joins a renewal already under way for the same refresh token. A renewal from the env pair records the pair's fingerprint (`seededFrom`, a truncated SHA-256 of the refresh token); a later launch with that same pair uses the token file instead. Nothing writes to Claude Desktop's config
 - **Multi-tenant Support**: Configurable for different Microsoft account types via TENANT_ID
-- **Error Handling**: Special handling for personal Microsoft accounts (MailboxNotEnabledForRESTAPI)
+- **Error Handling**: `MailboxNotEnabledForRESTAPI` becomes its own error (`MailboxNotEnabled`) with an explanation; nothing warns personal accounts up front, because they work
 - **Type Safety**: Strict TypeScript with Zod 4 schemas for parameter validation
 - **Tests** live beside the code as `src/*.spec.ts`. The repo's `./tokens.json` is a real credential, and the token manager writes under `$HOME`, so specs `chdir` into a temp directory and point `MSTODO_TOKEN_FILE`, `HOME` and `APPDATA` there before any `TokenManager` reads tokens. `src/test-support/graph-harness.ts` does this, then imports a fresh `todo-index.ts` (whose import builds the token-manager singleton) and drives tools through `server.fetch()`
 - **`src/test-support/setup.ts`** (a vitest `setupFiles`) runs before any spec file loads: it makes `fetch` throw, and points `HOME`, `APPDATA`, the token file and the cwd at a throwaway directory. That holds even for code that captures `fetch` or reads `HOME` at import time
@@ -137,7 +137,6 @@ gh release create vX.Y.Z --title vX.Y.Z --generate-notes --verify-tag
 - `get-task-lists-organized` with `groupBy=shared` prints no list IDs, even with `includeIds`.
 - Env-token setups (`MS_TODO_ACCESS_TOKEN`/`MS_TODO_REFRESH_TOKEN`, set by hand) cannot renew without `CLIENT_ID`/`CLIENT_SECRET` (and `TENANT_ID` unless it is `organizations`) in the env too: on the env path no stored tokens exist yet to supply them.
 - `postinstall` prints `npx microsoft-todo-mcp-server setup`, which starts the server, not setup; the setup command is `mstodo-setup`.
-- The personal-account `MailboxNotEnabledForRESTAPI` warning in `auth-status` and the sign-in page is shown to every personal account, though a live.com account works fully.
 
 ## Important Notes
 
