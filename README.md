@@ -60,7 +60,7 @@ The package provides four commands:
 
 - `microsoft-todo-mcp-server` - The MCP server
 - `mstodo` - Short alias for the MCP server
-- `mstodo-config` - Writes an `mcp.json` from `tokens.json` (see [Step 3](#step-3-configure-your-ai-assistant) for a caveat)
+- `mstodo-config` - Writes an `mcp.json` that points the server at your `tokens.json`
 - `mstodo-setup` - Guided setup. It does not yet finish on its own after you sign in, so use the steps under [Usage](#usage) instead
 
 ### Option 2: Clone and Run Locally
@@ -215,7 +215,9 @@ Add `"env": { "MSTODO_TOKEN_FILE": "/path/to/tokens.json" }` if the file is not 
 
 **Cursor:** add the same `mcpServers` entry to `~/.cursor/mcp.json`.
 
-**About `mstodo-config` and token environment variables:** `pnpm run create-config` (or `mstodo-config`) writes an `mcp.json` that passes `MS_TODO_ACCESS_TOKEN` and `MS_TODO_REFRESH_TOKEN` instead of a token file. Renewing those also needs `CLIENT_ID` and `CLIENT_SECRET` in the same `env` block, plus `TENANT_ID` unless it is `organizations`. Without them, calls start failing when the access token expires, within about an hour of signing in. The token-file setup above avoids this.
+**About `mstodo-config`:** `pnpm run create-config` (or `mstodo-config`) writes an `mcp.json` with the entry above, plus `MSTODO_TOKEN_FILE` set to the token file's absolute path. It copies no tokens into the config. It warns if the token file lacks `clientId` and `clientSecret`, which renewal needs.
+
+**About token environment variables:** if you pass `MS_TODO_ACCESS_TOKEN` and `MS_TODO_REFRESH_TOKEN` instead, renewing them also needs `CLIENT_ID` and `CLIENT_SECRET` in the same `env` block, plus `TENANT_ID` unless it is `organizations`. Without them, calls start failing when the access token expires, within about an hour of signing in. The token-file setup above avoids this.
 
 ### Available Scripts
 

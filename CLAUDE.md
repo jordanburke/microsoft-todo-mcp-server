@@ -84,7 +84,7 @@ This is a Model Context Protocol (MCP) server that enables AI assistants to inte
 2. **Graph Client** (`src/graph-client.ts`): Graph requests as functype `IO` over `Http.client`, with a typed error channel (`GraphError` = `HttpError | MailboxNotEnabled | PageLimit`)
 3. **CLI Wrapper** (`src/cli.ts`): Executable entry point; it only calls `startServer()`, and `src/token-manager.ts` finds and refreshes the tokens
 4. **Auth Server** (`src/auth-server.ts`): Express server implementing OAuth 2.0 flow with MSAL
-5. **Config Generator** (`src/create-mcp-config.ts`): Utility to create MCP configuration files
+5. **Config Generator** (`src/create-mcp-config.ts`): writes an `mcp.json` whose entry sets `MSTODO_TOKEN_FILE` to the token file; it copies no tokens
 
 ### somamcp Notes
 
@@ -135,7 +135,7 @@ gh release create vX.Y.Z --title vX.Y.Z --generate-notes --verify-tag
 
 - `get-tasks` offers `orderby=title`, which Graph rejects, and `count`, which Graph ignores (the server prints the number returned).
 - `get-task-lists-organized` with `groupBy=shared` prints no list IDs, even with `includeIds`.
-- Env-token setups (`MS_TODO_ACCESS_TOKEN`/`MS_TODO_REFRESH_TOKEN`, as `create-mcp-config.ts` writes) cannot renew without `CLIENT_ID`/`CLIENT_SECRET` (and `TENANT_ID` unless it is `organizations`) in the env too: on the env path no stored tokens exist yet to supply them.
+- Env-token setups (`MS_TODO_ACCESS_TOKEN`/`MS_TODO_REFRESH_TOKEN`, set by hand) cannot renew without `CLIENT_ID`/`CLIENT_SECRET` (and `TENANT_ID` unless it is `organizations`) in the env too: on the env path no stored tokens exist yet to supply them.
 - The auth server's `/refresh` route rewrites `tokens.json` without the refresh token or client credentials.
 - `postinstall` prints `npx microsoft-todo-mcp-server setup`, which starts the server, not setup; the setup command is `mstodo-setup`.
 - The personal-account `MailboxNotEnabledForRESTAPI` warning in `auth-status` and the sign-in page is shown to every personal account, though a live.com account works fully.
