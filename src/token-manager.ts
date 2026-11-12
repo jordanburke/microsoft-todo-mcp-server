@@ -61,11 +61,11 @@ export class TokenManager {
   private tokenFilePath: string
   private currentTokens: Option<StoredTokenData> = None()
   private envTokens: Option<TokenData> = None()
-  // A renewal under way, keyed by the refresh token it spends. Entra rotates the refresh
-  // token on use, so a second concurrent renewal with the same one would race the first.
   // True while the latest renewal could not be written to the token file, so the file
   // holds older tokens than this process does.
   private unsaved = false
+  // A renewal under way, keyed by the refresh token it spends. Entra rotates the refresh
+  // token on use, so a second concurrent renewal with the same one would race the first.
   private inFlight: Option<{ refreshToken: string; renewal: Promise<TokenData | null> }> = None()
 
   constructor() {
@@ -120,9 +120,16 @@ export class TokenManager {
       // pair (same seed fingerprint) is newer than the pair, so it is picked up instead of
       // re-spending the original refresh token on every launch. A different pair, such as
       // one from a fresh sign-in, starts over from the environment.
+      //
+      // A file holding the very same refresh token is adopted too: older versions copied a
+      // renewal from the token file into Claude Desktop's config as this env pair, and the
+      // file is where that pair's client credentials are.
       if (this.currentTokens.isNone()) {
-        const seed = fingerprint(envTokens.value.refreshToken)
-        this.currentTokens = readTokenFile(this.tokenFilePath, "token file").filter((t) => t.seededFrom === seed)
+        const { refreshToken } = envTokens.value
+        const seed = fingerprint(refreshToken)
+        this.currentTokens = readTokenFile(this.tokenFilePath, "token file").filter(
+          (t) => t.seededFrom === seed || t.refreshToken === refreshToken,
+        )
       }
       const live: TokenData = this.currentTokens.orElse(envTokens.value)
       if (Date.now() < live.expiresAt) return live

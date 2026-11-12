@@ -34,7 +34,7 @@ auth server is stopped, and then reports failure.
 
 ```bash
 pnpm run cli         # Run MCP server via CLI wrapper
-pnpm start           # Run MCP server directly
+pnpm start           # Run MCP server (dist/cli.js)
 ```
 
 ### Live Smoke (before/after comparison)
@@ -98,7 +98,7 @@ This is a Model Context Protocol (MCP) server that enables AI assistants to inte
 ### Key Architectural Patterns
 
 - **functype at the edges**: a tool builds its request as an `IO`, runs it once at the MCP boundary with `.run()`, and folds the `Either` into text (`graphErrorText` renders a failure). No module-level error state. A 401 renews the token and retries once with the same body; paging follows `@odata.nextLink` to the end or the limit, capped at 100 pages. DELETE is read raw (Graph's 204 has no body); every other reply must be JSON
-- **Token Management**: Tokens are stored in `tokens.json` and renewed 5 minutes before expiry, and again whenever Graph returns 401 (`refreshRejectedToken`). `TokenManager` keeps a Promise API but holds tokens as `Option`, reads files with `Try`, renews through `Http`, and joins a renewal already under way for the same refresh token. A renewal from the env pair records the pair's fingerprint (`seededFrom`, a truncated SHA-256 of the refresh token); a later launch with that same pair uses the token file instead. Nothing writes to Claude Desktop's config
+- **Token Management**: Tokens are stored in `tokens.json` and renewed 5 minutes before expiry, and again whenever Graph returns 401 (`refreshRejectedToken`). `TokenManager` keeps a Promise API but holds tokens as `Option`, reads files with `Try`, renews through `Http`, and joins a renewal already under way for the same refresh token. A renewal from the env pair records the pair's fingerprint (`seededFrom`, a truncated SHA-256 of the refresh token); a later launch with that same pair, or with a file holding the same refresh token (as older versions left them), uses the token file instead. The token manager never writes to Claude Desktop's config
 - **Multi-tenant Support**: Configurable for different Microsoft account types via TENANT_ID
 - **Error Handling**: `MailboxNotEnabledForRESTAPI` becomes its own error (`MailboxNotEnabled`) with an explanation; nothing warns personal accounts up front, because they work
 - **Type Safety**: Strict TypeScript with Zod 4 schemas for parameter validation
@@ -133,7 +133,7 @@ gh release create vX.Y.Z --title vX.Y.Z --generate-notes --verify-tag
 
 ## Known Issues (not yet fixed)
 
-- Env-token setups (`MS_TODO_ACCESS_TOKEN`/`MS_TODO_REFRESH_TOKEN`, set by hand) cannot renew without `CLIENT_ID`/`CLIENT_SECRET` (and `TENANT_ID` unless it is `organizations`) in the env too: on the env path no stored tokens exist yet to supply them.
+- Env-token setups (`MS_TODO_ACCESS_TOKEN`/`MS_TODO_REFRESH_TOKEN` with no matching token file, such as an `mcp.json` from an older `mstodo-config`) cannot renew without `CLIENT_ID`/`CLIENT_SECRET` (and `TENANT_ID` unless it is `organizations`) in the env too: on the env path no stored tokens exist yet to supply them.
 
 ## Important Notes
 

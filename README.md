@@ -219,6 +219,8 @@ Add `"env": { "MSTODO_TOKEN_FILE": "/path/to/tokens.json" }` if the file is not 
 
 **About token environment variables:** if you pass `MS_TODO_ACCESS_TOKEN` and `MS_TODO_REFRESH_TOKEN` instead, renewing them also needs `CLIENT_ID` and `CLIENT_SECRET` in the same `env` block, plus `TENANT_ID` unless it is `organizations`. Without them, calls start failing when the access token expires, within about an hour of signing in. The token-file setup above avoids this.
 
+**Upgrading from an older version:** older versions copied renewed tokens into Claude Desktop's config as `MS_TODO_ACCESS_TOKEN` and `MS_TODO_REFRESH_TOKEN`, and older `mstodo-config` wrote them into `mcp.json`. The server now picks up the token file when it holds the same refresh token, so these setups renew again. The cleaner fix is to delete those two variables from the entry, so the server reads only the token file. Do the same if you sign in again: a fresh token file is ignored while an old pair is still set.
+
 ### Available Scripts
 
 ```bash
@@ -229,7 +231,7 @@ pnpm run validate     # Format, lint, typecheck, test and build
 pnpm test             # Run the tests
 
 # Running the Server
-pnpm start            # Run MCP server directly
+pnpm start            # Run MCP server (dist/cli.js)
 pnpm run cli          # Run MCP server via CLI wrapper
 npx microsoft-todo-mcp-server  # Run globally installed version
 

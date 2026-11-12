@@ -422,6 +422,29 @@ describe("environment pair and token file across restarts", () => {
     expect(refreshTokenSentOn(fetchMock, 1)).toBe("refreshed-refresh")
   })
 
+  it("adopts a file holding the same refresh token, as older versions left them, and renews with its credentials", async () => {
+    // An older version renewed, wrote the token file, then copied the same pair into
+    // Claude Desktop's config as env tokens, without the client credentials.
+    delete process.env.CLIENT_ID
+    delete process.env.CLIENT_SECRET
+    process.env.MS_TODO_ACCESS_TOKEN = "copied-access"
+    process.env.MS_TODO_REFRESH_TOKEN = "copied-refresh"
+    writeTokenFile({
+      accessToken: "copied-access",
+      refreshToken: "copied-refresh",
+      expiresAt: 0,
+      clientId: "file-client",
+      clientSecret: "file-secret",
+    })
+    const fetchMock = stubRefresh("healed")
+
+    const tokens = await new TokenManager().getTokens()
+
+    expect(tokens?.accessToken).toBe("healed")
+    expect(refreshTokenSentOn(fetchMock, 0)).toBe("copied-refresh")
+    expect(new URLSearchParams(String(fetchMock.mock.calls[0][1].body)).get("client_id")).toBe("file-client")
+  })
+
   it("starts over from a new environment pair, such as one from a fresh sign-in", async () => {
     process.env.MS_TODO_ACCESS_TOKEN = jwtExpiringIn(-60)
     process.env.MS_TODO_REFRESH_TOKEN = "env-refresh"
