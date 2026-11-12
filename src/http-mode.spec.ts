@@ -64,6 +64,8 @@ describe("readHttpConfig", () => {
     [{ MSTODO_HTTP_BASE_URL: "https://todo.example.com/todo" }, "must be an origin only"],
     [{ MSTODO_HTTP_BASE_URL: "https://todo.example.com/?a=1" }, "must be an origin only"],
     [{ MSTODO_HTTP_BASE_URL: "https://todo.example.com/#frag" }, "must be an origin only"],
+    [{ MSTODO_HTTP_BASE_URL: "https://todo.example.com?" }, "must be an origin only"],
+    [{ MSTODO_HTTP_BASE_URL: "https://todo.example.com#" }, "must be an origin only"],
     [{ MSTODO_HTTP_BASE_URL: "https://user:pw@todo.example.com" }, "must not hold a user name or password"],
     [{ TENANT_ID: "../../evil" }, "TENANT_ID must be a tenant id"],
     [{ TOKEN_ENCRYPTION_KEY: "j".repeat(48) }, "must differ"],
@@ -117,6 +119,12 @@ describe("redirectPatternProblem", () => {
     "https://claude ai/*",
     "https://claude_ai.example/*",
     "https://.claude.ai/*",
+    "https://claude.ai:0/*",
+    "https://claude.ai:65536/*",
+    "https://app.example.com:99999/cb",
+    "https://1.2.3.999/*",
+    "https://[:::]/*",
+    "https://[1::2::3]/*",
   ])("refuses %s", (pattern) => {
     expect(redirectPatternProblem(pattern)).toBeDefined()
   })

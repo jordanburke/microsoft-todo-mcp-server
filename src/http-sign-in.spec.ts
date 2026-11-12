@@ -64,9 +64,11 @@ const signIn = async (server: Server, claims: Record<string, unknown>) => {
     authorize.searchParams.set(k, v)
   const consentPage = await (await server.fetch(new Request(authorize))).text()
   const transactionId = /name="transaction_id" value="([^"]+)"/.exec(consentPage)?.[1] ?? ""
+  // Post where the form says, as a browser would: 2.7 fixed a double slash in this URL.
+  const consentAction = /<form method="post" action="([^"]+)"/.exec(consentPage)?.[1] ?? ""
 
   const approved = await server.fetch(
-    new Request(`${BASE}/oauth/consent`, {
+    new Request(new URL(consentAction.replace(/&amp;/g, "&"), BASE), {
       method: "POST",
       headers: { "content-type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({ transaction_id: transactionId, action: "approve" }),
@@ -203,6 +205,42 @@ describe("a sign-in through HTTP mode's OAuth provider", () => {
       client_id: flow.clientId,
     })
     expect(reused.status).toBe(400)
+  })
+
+  it("posts consent to a single-slash /oauth/consent", async () => {
+    start()
+    const flow = await signIn(http.server, USER)
+
+    expect(flow.consentPage).toMatch(/<form method="post" action="[^"]*(?<!\/)\/oauth\/consent"/)
+    expect(flow.approved.status).toBe(302)
+  })
+
+  it("refuses PKCE's plain method at authorize", async () => {
+    start()
+    const registered = await http.server.fetch(
+      new Request(`${BASE}/oauth/register`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ redirect_uris: [REDIRECT], token_endpoint_auth_method: "none" }),
+      }),
+    )
+    const { client_id: clientId } = await registered.json()
+    const authorize = new URL(`${BASE}/oauth/authorize`)
+    for (const [k, v] of Object.entries({
+      response_type: "code",
+      client_id: clientId,
+      redirect_uri: REDIRECT,
+      code_challenge: "a".repeat(43),
+      code_challenge_method: "plain",
+      state: "s",
+    }))
+      authorize.searchParams.set(k, v)
+
+    const response = await http.server.fetch(new Request(authorize))
+    const back = new URL(response.headers.get("location") ?? "")
+
+    expect(back.origin + back.pathname).toBe(REDIRECT)
+    expect(back.searchParams.get("error")).toBe("invalid_request")
   })
 
   it("keeps a code usable after a redemption with the wrong verifier", async () => {

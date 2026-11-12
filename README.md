@@ -278,7 +278,7 @@ mstodo-http          # or: npx -p microsoft-todo-mcp-server mstodo-http
 
 It refuses to start, and lists what is wrong, until every required setting is valid.
 
-4. **Connect a client** to `<your base URL>/mcp`. The client discovers the OAuth endpoints, registers itself, and sends you to Microsoft to sign in.
+4. **Connect a client** to `<your base URL>/mcp`. The client discovers the OAuth endpoints, registers itself, and sends you to Microsoft to sign in. Finish signing in within a day: a client nobody signs in with lapses after 24 hours, and then has to be removed and added again. A client that has signed in lasts 90 days after its last sign-in or refresh.
 
 `auth-status` reports who is signed in and when their Microsoft token expires.
 
