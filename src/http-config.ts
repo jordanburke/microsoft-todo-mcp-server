@@ -54,10 +54,12 @@ const list = (value: string): string[] =>
     .filter((item) => item !== "")
 
 /**
- * Why a redirect URI pattern is unsafe, or undefined if it is safe. somamcp's `*` and `?` match
- * any characters, including `.` and `/`, so a wildcard anywhere before the path lets a client
- * register a host it runs (`https://claude.ai*` matches `https://claude.ai.evil.example/`). The
- * scheme and host must be literal; only a loopback host may leave the port open.
+ * Why a redirect URI pattern is unsafe, or undefined if it is safe. The scheme and host must be
+ * literal, `*` and `?` may appear only in the path, and only a loopback host may use http or leave
+ * the port open. somamcp 2.7+ enforces the same rules when the provider is built (before 2.7 its
+ * `*` also matched `.` and `/`, so `https://claude.ai*` admitted `https://claude.ai.evil.example/`).
+ * This check runs first so every bad pattern is reported at startup with the setting's name, and
+ * it also refuses an upper-case host, which would never match what a browser sends.
  */
 export const redirectPatternProblem = (pattern: string): string | undefined => {
   // The host is a bracketed IPv6 address or a name with no / : ? # [ ].

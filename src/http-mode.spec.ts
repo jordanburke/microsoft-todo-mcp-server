@@ -4,7 +4,7 @@ import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "f
 import { tmpdir } from "os"
 import { dirname, join, resolve } from "path"
 import type { AuthProvider } from "somamcp"
-import type { AzureSession } from "somamcp/node"
+import { type AzureSession, createAzureProvider } from "somamcp/node"
 import { fileURLToPath } from "url"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 
@@ -129,8 +129,19 @@ describe("redirectPatternProblem", () => {
     "https://app.example.com:8443/cb/*",
     "http://localhost:3000/cb",
     "http://[::1]:*/*",
-  ])("accepts %s", (pattern) => {
+  ])("accepts %s, and so does somamcp's provider", (pattern) => {
     expect(redirectPatternProblem(pattern)).toBeUndefined()
+    // somamcp refuses an unsafe pattern when the provider is built; the two checks must agree,
+    // or a config this server accepts would still fail to start.
+    const config = readHttpConfig({ ...validEnv, MSTODO_HTTP_REDIRECT_URIS: pattern }).orThrow(new Error("x"))
+    expect(() => createAzureProvider(azureProviderConfig(config)).close()).not.toThrow()
+  })
+
+  it("is refused by somamcp's provider too, when this check is bypassed", () => {
+    const config = readHttpConfig(validEnv).orThrow(new Error("x"))
+    expect(() =>
+      createAzureProvider({ ...azureProviderConfig(config), allowedRedirectUriPatterns: ["https://claude.ai*"] }),
+    ).toThrow(/allowedRedirectUriPatterns/)
   })
 })
 
