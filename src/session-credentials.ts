@@ -20,7 +20,8 @@ export const sessionCredentials: CredentialSource<AzureSession> = {
     if (!session?.accessToken) return "Not signed in. Connect to this server again to sign in with Microsoft."
     const who = session.upn ? ` as ${session.upn}` : ""
     if (session.expiresAt === undefined) return `Signed in${who}.`
-    const expiry = new Date(session.expiresAt * 1000).toLocaleString()
+    // The caller may be in another time zone than the server, so the zone is named.
+    const expiry = new Date(session.expiresAt * 1000).toLocaleString(undefined, { timeZoneName: "short" })
     return Date.now() >= session.expiresAt * 1000
       ? `Signed in${who}. The Microsoft token expired at ${expiry}; your client renews it on its next refresh.`
       : `Signed in${who}. The Microsoft token expires at ${expiry}.`

@@ -58,12 +58,15 @@ const list = (value: string): string[] =>
  * scheme and host must be literal; only a loopback host may leave the port open.
  */
 export const redirectPatternProblem = (pattern: string): string | undefined => {
-  const parts = /^(https?):\/\/([^/:?#]*)(?::([^/?#]*))?(\/.*)?$/.exec(pattern)
+  // The host is a bracketed IPv6 address or a name with no / : ? # [ ].
+  const parts = /^(https?):\/\/(\[[0-9a-fA-F:.]+\]|[^/:?#[\]]*)(?::([^/?#]*))?(\/.*)?$/.exec(pattern)
   const [, scheme, host, port] = parts ?? []
   const unsafe = `MSTODO_HTTP_REDIRECT_URIS pattern ${pattern}`
   if (!parts) return `${unsafe} must start with http:// or https:// and a host`
   if (!host || /[*?@]/.test(host)) return `${unsafe} must name its host exactly, with no wildcard`
-  const loopback = LOOPBACK.includes(host.toLowerCase())
+  // somamcp matches case-sensitively, and a browser sends the host in lower case.
+  if (host !== host.toLowerCase()) return `${unsafe} must write its host in lower case`
+  const loopback = LOOPBACK.includes(host)
   if (scheme === "http" && !loopback) return `${unsafe} must use https unless its host is localhost`
   if (port !== undefined && !/^\d+$/.test(port) && !(loopback && port === "*"))
     return `${unsafe} may leave the port open only for localhost`
