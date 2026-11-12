@@ -1,11 +1,5 @@
 // Authentication server for Microsoft Todo MCP service
-import {
-  AccountInfo,
-  AuthenticationResult,
-  ConfidentialClientApplication,
-  Configuration,
-  LogLevel,
-} from "@azure/msal-node"
+import { ConfidentialClientApplication, Configuration, LogLevel } from "@azure/msal-node"
 import dotenv from "dotenv"
 import express, { Request, Response } from "express"
 import fs from "fs"
@@ -101,95 +95,6 @@ console.log("MSAL application created")
 // Setup a test route to check if server is working
 app.get("/test", (req: Request, res: Response) => {
   res.send("Auth server is running correctly")
-})
-
-// Helper function to refresh an access token
-async function refreshAccessToken(): Promise<{
-  success: boolean
-  error?: any
-  response?: AuthenticationResult | null
-  accessToken?: string
-  expiresAt?: number
-}> {
-  try {
-    // Get account info from the token cache
-    const tokenCache = cca.getTokenCache()
-    const accounts = await tokenCache.getAllAccounts()
-
-    if (accounts.length === 0) {
-      console.log("No accounts found in the token cache")
-      return { success: false, error: "No accounts found in token cache" }
-    }
-
-    // Get the first account (we should have only one in this scenario)
-    const account = accounts[0]
-    console.log("Found account in token cache:", {
-      username: account.username,
-      localAccountId: account.localAccountId,
-      tenantId: account.tenantId,
-    })
-
-    // Create a silent request using the account
-    const silentRequest = {
-      account: account,
-      scopes: scopes,
-      forceRefresh: true,
-    }
-
-    console.log("Attempting to acquire token silently...")
-    const response = await cca.acquireTokenSilent(silentRequest)
-
-    console.log("Token refreshed successfully")
-    return {
-      success: true,
-      response: response,
-      accessToken: response!.accessToken,
-      expiresAt: Date.now() + ((response as any).expiresIn || 3600) * 1000 - 5 * 60 * 1000,
-    }
-  } catch (error) {
-    console.error("Error refreshing token silently:", error)
-    return {
-      success: false,
-      error: error,
-    }
-  }
-}
-
-// Update refresh endpoint to use acquireTokenSilent
-app.get("/refresh", async (req: Request, res: Response) => {
-  try {
-    const result = await refreshAccessToken()
-
-    if (result.success) {
-      // Save updated token data
-      const tokenData = {
-        accessToken: result.accessToken,
-        expiresAt: result.expiresAt,
-        tokenType: result.response!.tokenType,
-        scopes: result.response!.scopes,
-      }
-
-      // Save updated token data
-      fs.writeFileSync(TOKEN_FILE_PATH, JSON.stringify(tokenData, null, 2), "utf8")
-
-      res.json({
-        success: true,
-        message: "Token refreshed successfully",
-        expiresAt: new Date(result.expiresAt!).toISOString(),
-      })
-    } else {
-      // If silent refresh fails, redirect to login
-      console.log("Silent token refresh failed, redirecting to login")
-      res.json({
-        success: false,
-        message: "Token refresh failed, please login again",
-        redirectUrl: "/",
-      })
-    }
-  } catch (error: any) {
-    console.error("Error in refresh route:", error)
-    res.status(500).send(`Error refreshing token: ${error.message}`)
-  }
 })
 
 // Add a client credentials flow endpoint

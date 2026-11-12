@@ -136,7 +136,6 @@ gh release create vX.Y.Z --title vX.Y.Z --generate-notes --verify-tag
 - `get-tasks` offers `orderby=title`, which Graph rejects, and `count`, which Graph ignores (the server prints the number returned).
 - `get-task-lists-organized` with `groupBy=shared` prints no list IDs, even with `includeIds`.
 - Env-token setups (`MS_TODO_ACCESS_TOKEN`/`MS_TODO_REFRESH_TOKEN`, set by hand) cannot renew without `CLIENT_ID`/`CLIENT_SECRET` (and `TENANT_ID` unless it is `organizations`) in the env too: on the env path no stored tokens exist yet to supply them.
-- The auth server's `/refresh` route rewrites `tokens.json` without the refresh token or client credentials.
 - `postinstall` prints `npx microsoft-todo-mcp-server setup`, which starts the server, not setup; the setup command is `mstodo-setup`.
 - The personal-account `MailboxNotEnabledForRESTAPI` warning in `auth-status` and the sign-in page is shown to every personal account, though a live.com account works fully.
 
