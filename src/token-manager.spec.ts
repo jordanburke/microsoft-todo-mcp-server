@@ -385,6 +385,56 @@ describe("no tokens anywhere", () => {
   })
 })
 
+describe("environment pair and token file across restarts", () => {
+  it("records which environment pair a renewal descends from, as a fingerprint", async () => {
+    process.env.MS_TODO_ACCESS_TOKEN = jwtExpiringIn(-60)
+    process.env.MS_TODO_REFRESH_TOKEN = "env-refresh"
+    stubRefresh("renewed")
+
+    await new TokenManager().getTokens()
+
+    const saved = readTokenFile()
+    expect(saved.seededFrom).toMatch(/^[0-9a-f]{16}$/)
+    expect(JSON.stringify(saved)).not.toContain("env-refresh")
+  })
+
+  it("picks up the token file on the next launch when it was renewed from the same pair", async () => {
+    process.env.MS_TODO_ACCESS_TOKEN = jwtExpiringIn(-60)
+    process.env.MS_TODO_REFRESH_TOKEN = "env-refresh"
+    const fetchMock = stubRefresh("renewed")
+    await new TokenManager().getTokens()
+
+    const relaunched = await new TokenManager().getTokens()
+
+    expect(relaunched?.accessToken).toBe("renewed")
+    expect(fetchMock).toHaveBeenCalledOnce()
+  })
+
+  it("renews from the file's rotated refresh token, not the original pair, once that expires", async () => {
+    process.env.MS_TODO_ACCESS_TOKEN = jwtExpiringIn(-60)
+    process.env.MS_TODO_REFRESH_TOKEN = "env-refresh"
+    const fetchMock = stubRefresh("renewed")
+    await new TokenManager().getTokens()
+    vi.setSystemTime(Date.now() + 2 * 3600 * 1000)
+
+    await new TokenManager().getTokens()
+
+    expect(refreshTokenSentOn(fetchMock, 1)).toBe("refreshed-refresh")
+  })
+
+  it("starts over from a new environment pair, such as one from a fresh sign-in", async () => {
+    process.env.MS_TODO_ACCESS_TOKEN = jwtExpiringIn(-60)
+    process.env.MS_TODO_REFRESH_TOKEN = "env-refresh"
+    stubRefresh("renewed")
+    await new TokenManager().getTokens()
+
+    process.env.MS_TODO_ACCESS_TOKEN = jwtExpiringIn(3600)
+    process.env.MS_TODO_REFRESH_TOKEN = "new-sign-in"
+
+    expect((await new TokenManager().getTokens())?.accessToken).toBe(process.env.MS_TODO_ACCESS_TOKEN)
+  })
+})
+
 describe("environment pair over the token file", () => {
   it("wins even when the file holds a newer token", async () => {
     process.env.MS_TODO_ACCESS_TOKEN = jwtExpiringIn(3600)
@@ -432,27 +482,20 @@ describe("Claude Desktop config after a renewal", () => {
     writeFileSync(claudeConfig(), JSON.stringify(config))
   }
 
-  it("KNOWN ISSUE: writes the renewed tokens, without client credentials, into a microsoft-todo entry", async () => {
-    writeClaudeConfig({
+  it("is never written, even with a microsoft-todo entry", async () => {
+    const config = {
       mcpServers: {
         "microsoft-todo": { command: "npx", env: { KEEP: "1" } },
         other: { command: "x", env: { A: "b" } },
       },
-    })
+    }
+    writeClaudeConfig(config)
     writeTokenFile({ accessToken: "stale", refreshToken: "r", expiresAt: 0 })
     stubRefresh("renewed")
 
     await new TokenManager().getTokens()
 
-    expect(JSON.parse(readFileSync(claudeConfig(), "utf8"))).toEqual({
-      mcpServers: {
-        "microsoft-todo": {
-          command: "npx",
-          env: { KEEP: "1", MS_TODO_ACCESS_TOKEN: "renewed", MS_TODO_REFRESH_TOKEN: "refreshed-refresh" },
-        },
-        other: { command: "x", env: { A: "b" } },
-      },
-    })
+    expect(JSON.parse(readFileSync(claudeConfig(), "utf8"))).toEqual(config)
   })
 
   it("leaves a config without that entry untouched, and creates none", async () => {

@@ -1,4 +1,5 @@
 // src/token-manager.ts
+import { createHash } from "crypto"
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs"
 import { Http, None, Option, Some, Try } from "functype"
 import { homedir } from "os"
@@ -14,7 +15,17 @@ interface StoredTokenData extends TokenData {
   clientId?: string
   clientSecret?: string
   tenantId?: string
+  /** Fingerprint of the environment refresh token these tokens were renewed from, if any. */
+  seededFrom?: string
 }
+
+// A short, one-way fingerprint of a refresh token, so the token file can record which
+// environment pair it descends from without storing that pair a second time.
+const fingerprint = (token: string): string => createHash("sha256").update(token).digest("hex").slice(0, 16)
+
+// The seed a renewal inherits: the one already recorded, or else the environment pair's.
+const seedOf = (stored: StoredTokenData | undefined, env: Option<TokenData>): Option<string> =>
+  Option(stored?.seededFrom).or(env.map((t) => fingerprint(t.refreshToken)))
 
 type TokenResponse = { access_token: string; refresh_token?: string; expires_in: number }
 
@@ -101,6 +112,15 @@ export class TokenManager {
       // rewrites those variables, so the original values stay frozen at whatever they
       // were at launch; preferring them would serve a stale access token forever and
       // would re-send a refresh token the identity provider has already rotated away.
+      //
+      // The same holds across restarts: a token file renewed from this very environment
+      // pair (same seed fingerprint) is newer than the pair, so it is picked up instead of
+      // re-spending the original refresh token on every launch. A different pair, such as
+      // one from a fresh sign-in, starts over from the environment.
+      if (this.currentTokens.isNone()) {
+        const seed = fingerprint(envTokens.value.refreshToken)
+        this.currentTokens = readTokenFile(this.tokenFilePath, "token file").filter((t) => t.seededFrom === seed)
+      }
       const live: TokenData = this.currentTokens.orElse(envTokens.value)
       if (Date.now() < live.expiresAt) return live
 
@@ -201,10 +221,13 @@ export class TokenManager {
       clientId,
       clientSecret,
       tenantId,
+      ...seedOf(stored, this.readEnvTokens()).fold(
+        () => ({}),
+        (seededFrom) => ({ seededFrom }),
+      ),
     }
 
     this.persist(newTokens)
-    await this.updateClaudeConfig(newTokens)
     return newTokens
   }
 
@@ -224,35 +247,6 @@ export class TokenManager {
   saveTokens(tokens: StoredTokenData): void {
     this.currentTokens = Some(tokens)
     writeFileSync(this.tokenFilePath, JSON.stringify(tokens, null, 2), "utf8")
-  }
-
-  // Update Claude config automatically
-  async updateClaudeConfig(tokens: TokenData): Promise<void> {
-    const claudeConfigPath =
-      process.platform === "win32"
-        ? join(process.env.APPDATA || "", "Claude", "claude_desktop_config.json")
-        : process.platform === "darwin"
-          ? join(homedir(), "Library", "Application Support", "Claude", "claude_desktop_config.json")
-          : join(homedir(), ".config", "Claude", "claude_desktop_config.json")
-
-    if (!existsSync(claudeConfigPath)) return
-
-    Try(() => {
-      const config = JSON.parse(readFileSync(claudeConfigPath, "utf8"))
-      const entry = config.mcpServers?.["microsoft-todo"]
-      if (!entry) return
-
-      entry.env = {
-        ...entry.env,
-        MS_TODO_ACCESS_TOKEN: tokens.accessToken,
-        MS_TODO_REFRESH_TOKEN: tokens.refreshToken,
-      }
-      writeFileSync(claudeConfigPath, JSON.stringify(config, null, 2), "utf8")
-      console.error("Updated Claude config with new tokens")
-    }).fold(
-      (error) => console.error("Could not update Claude config:", error),
-      () => undefined,
-    )
   }
 
   promptForReauth(): void {

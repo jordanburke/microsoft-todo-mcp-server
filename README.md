@@ -144,7 +144,7 @@ export MS_TODO_ACCESS_TOKEN=your_access_token
 export MS_TODO_REFRESH_TOKEN=your_refresh_token
 ```
 
-These two are a starting point, not a live store — nothing rewrites your environment when a token is renewed. A renewal is kept for the rest of the session and written to the token file, and the environment pair is not consulted again.
+These two are a starting point, not a live store — nothing rewrites your environment when a token is renewed. A renewal is kept for the rest of the session and written to the token file. On later launches the server uses that token file instead, as long as the environment still holds the same pair it was renewed from; set a new pair, for example after signing in again, and it starts over from that.
 
 How the expiry is known depends on your account type. Work and school accounts get a JWT access token, so the server reads the real deadline from it and renews 5 minutes early. Personal accounts get an opaque token, where there is nothing to read and the server assumes an hour from when it first saw the value. Either way renewal needs `CLIENT_ID` and `CLIENT_SECRET`; without them the server cannot refresh, and calls start failing once the supplied token runs out.
 
