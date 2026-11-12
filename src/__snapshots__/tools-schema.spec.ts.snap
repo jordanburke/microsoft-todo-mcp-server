@@ -411,7 +411,7 @@ exports[`tools/list > keeps every tool's description and input schema 1`] = `
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "properties": {
         "count": {
-          "description": "Whether to include a count of tasks",
+          "description": "Print how many tasks this call returned. Graph ignores $count on To Do tasks, so it is not a total for the list.",
           "type": "boolean",
         },
         "filter": {
@@ -423,7 +423,7 @@ exports[`tools/list > keeps every tool's description and input schema 1`] = `
           "type": "string",
         },
         "orderby": {
-          "description": "Property to sort by (e.g., 'createdDateTime desc')",
+          "description": "OData $orderby, e.g. 'createdDateTime desc'. Graph rejects 'title' on To Do tasks.",
           "type": "string",
         },
         "select": {

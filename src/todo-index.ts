@@ -331,6 +331,13 @@ server.addTool({
   },
 })
 
+// The "List IDs Reference" section get-task-lists-organized appends with includeIds.
+const listIdsReference = (lists: TaskList[]): string =>
+  "\n\n📋 List IDs Reference:\n" +
+  "-".repeat(50) +
+  "\n" +
+  lists.map((list) => `${list.displayName}: ${list.id}\n`).join("")
+
 // Enhanced organized view of task lists
 server.addTool({
   name: "get-task-lists-organized",
@@ -374,6 +381,8 @@ server.addTool({
         personalLists.forEach((list) => {
           output += `   ├─ ${list.displayName}\n`
         })
+
+        if (includeIds) output += listIdsReference(lists)
 
         return reply(output)
       }
@@ -539,13 +548,7 @@ server.addTool({
       output += "-".repeat(50) + "\n"
       output += `Summary: ${totalLists} lists in ${totalCategories} categories\n`
 
-      if (includeIds) {
-        // Add a section with IDs
-        output += "\n\n📋 List IDs Reference:\n" + "-".repeat(50) + "\n"
-        lists.forEach((list) => {
-          output += `${list.displayName}: ${list.id}\n`
-        })
-      }
+      if (includeIds) output += listIdsReference(lists)
 
       return reply(output)
     } catch (error) {
@@ -641,10 +644,20 @@ server.addTool({
       .describe(
         "Comma-separated subset of the shown fields to include: status, dueDateTime, importance, categories, recurrence, body (e.g., 'status,dueDateTime'). id and title are always included; other names are ignored.",
       ),
-    orderby: z.string().optional().describe("Property to sort by (e.g., 'createdDateTime desc')"),
+    orderby: z
+      .string()
+      .optional()
+      .describe(
+        "OData $orderby, e.g. 'createdDateTime desc'. Graph rejects 'title' on To Do tasks.",
+      ),
     top: z.number().optional().describe("Maximum number of tasks to retrieve"),
     skip: z.number().optional().describe("Number of tasks to skip"),
-    count: z.boolean().optional().describe("Whether to include a count of tasks"),
+    count: z
+      .boolean()
+      .optional()
+      .describe(
+        "Print how many tasks this call returned. Graph ignores $count on To Do tasks, so it is not a total for the list.",
+      ),
   }),
   execute: async ({ listId, filter, select, orderby, top, skip, count }) => {
     try {

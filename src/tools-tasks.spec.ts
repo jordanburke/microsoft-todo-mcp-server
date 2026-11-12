@@ -133,7 +133,7 @@ describe("get-tasks", () => {
     )
   })
 
-  it("KNOWN ISSUE: count prints the number returned, not Graph's total", async () => {
+  it("count prints the number returned, as its description says, not Graph's total", async () => {
     h.net.on("GET", /^\/me\/todo\/lists\/L1\/tasks/, json({ value: [task("T1"), task("T2")], "@odata.count": 40 }))
 
     const { text } = await h.callTool("get-tasks", { listId: "L1", count: true })
@@ -141,7 +141,7 @@ describe("get-tasks", () => {
     expect(text).toContain("Total count: 2\n\n")
   })
 
-  it("KNOWN ISSUE: offers orderby=title, which Graph rejects", async () => {
+  it("passes Graph's refusal of orderby=title through (the description warns against it)", async () => {
     h.net.on(
       "GET",
       `${TASKS}?%24orderby=title`,
