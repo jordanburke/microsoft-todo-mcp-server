@@ -130,7 +130,10 @@ gh release create vX.Y.Z --title vX.Y.Z --generate-notes --verify-tag
 
 ## Known Issues (not yet fixed)
 
-- `delete-task` and `delete-task-list` report success without checking Graph's response, so an unknown ID "succeeds".
+- `delete-task`, `delete-task-list` and `delete-checklist-item` report success without checking Graph's response, so an unknown ID "succeeds".
+- `archive-completed-tasks` counts a task as archived once its copy is created, even if deleting it from the source list then fails (the task ends up in both lists).
+- `test-graph-api-exploration` reports a failed request as `Found! Response: null`, because Graph failures return `null` rather than throwing.
+- Two calls that find the token expired at the same moment each renew it; there is no shared in-flight refresh.
 - `get-tasks` offers `orderby=title`, which Graph rejects, and `count`, which Graph ignores (the server prints the number returned).
 - `get-task-lists-organized` with `groupBy=shared` prints no list IDs, even with `includeIds`.
 - Env-token setups (`MS_TODO_ACCESS_TOKEN`/`MS_TODO_REFRESH_TOKEN`, as `create-mcp-config.ts` writes) cannot renew without `CLIENT_ID`/`CLIENT_SECRET` (and `TENANT_ID` unless it is `organizations`) in the env too: on the env path no stored tokens exist yet to supply them.
