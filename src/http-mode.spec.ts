@@ -112,6 +112,11 @@ describe("redirectPatternProblem", () => {
     "claude.ai/*",
     "http://LOCALHOST:*/*",
     "http://[::1]evil.example/*",
+    "https://\\/*",
+    "https://\t/*",
+    "https://claude ai/*",
+    "https://claude_ai.example/*",
+    "https://.claude.ai/*",
   ])("refuses %s", (pattern) => {
     expect(redirectPatternProblem(pattern)).toBeDefined()
   })

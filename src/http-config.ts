@@ -40,6 +40,8 @@ export const HTTP_SCOPES = [
 const DEFAULT_PORT = 3100
 const DEFAULT_REDIRECT_URI_PATTERNS = ["https://claude.ai/*", "http://localhost:*/*", "http://127.0.0.1:*/*"]
 const MIN_KEY_LENGTH = 32
+// A DNS name or dotted IPv4 address: letters, digits, dots and hyphens.
+const HOST_NAME = /^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$/i
 const LOOPBACK = ["localhost", "127.0.0.1", "[::1]"]
 // A tenant's id (a GUID), one of Entra ID's shared names, or a verified domain.
 const TENANT =
@@ -63,9 +65,12 @@ export const redirectPatternProblem = (pattern: string): string | undefined => {
   const [, scheme, host, port] = parts ?? []
   const unsafe = `MSTODO_HTTP_REDIRECT_URIS pattern ${pattern}`
   if (!parts) return `${unsafe} must start with http:// or https:// and a host`
-  if (!host || /[*?@]/.test(host)) return `${unsafe} must name its host exactly, with no wildcard`
   // somamcp matches case-sensitively, and a browser sends the host in lower case.
-  if (host !== host.toLowerCase()) return `${unsafe} must write its host in lower case`
+  if (host && host !== host.toLowerCase() && HOST_NAME.test(host)) return `${unsafe} must write its host in lower case`
+  // Only characters a host name or IPv6 literal can hold: anything else (a wildcard, @, a
+  // backslash, whitespace) could let a matched URI parse to another host.
+  if (!HOST_NAME.test(host) && !/^\[[0-9a-f:.]+\]$/.test(host))
+    return `${unsafe} must name its host exactly, with no wildcard`
   const loopback = LOOPBACK.includes(host)
   if (scheme === "http" && !loopback) return `${unsafe} must use https unless its host is localhost`
   if (port !== undefined && !/^\d+$/.test(port) && !(loopback && port === "*"))
