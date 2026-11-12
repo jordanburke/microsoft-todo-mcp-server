@@ -104,7 +104,8 @@ export const graphRequest = <T>(
       console.error(`Graph request failed: ${method} ${url}: ${graphErrorText(classified)}`)
       return classified
     })
-    .tap((data) => console.error(`Response received: ${JSON.stringify(data ?? null).substring(0, 200)}...`))
+    // Logs the size, not the content: over HTTP the content is a signed-in user's tasks.
+    .tap((data) => console.error(`Response received: ${JSON.stringify(data ?? null).length} bytes`))
 
 /**
  * Every item of a paged collection. Graph pages on its own terms and signals more with
