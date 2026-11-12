@@ -78,12 +78,13 @@ Built with **ts-builds 4.0.2** (tsdown, vitest 5) on **pnpm 12**. Non-obvious, l
 
 ## Architecture Overview
 
-This is a Model Context Protocol (MCP) server that enables AI assistants to interact with Microsoft To Do via the Microsoft Graph API. The codebase follows a modular architecture with four main components:
+This is a Model Context Protocol (MCP) server that enables AI assistants to interact with Microsoft To Do via the Microsoft Graph API. The codebase follows a modular architecture with five main components:
 
 1. **MCP Server** (`src/todo-index.ts`): Built on somamcp (MCP SDK 2.x underneath), serving 17 tools over stdio: 16 for Microsoft To Do plus somamcp's `info`
-2. **CLI Wrapper** (`src/cli.ts`): Executable entry point; it only calls `startServer()`, and `src/token-manager.ts` finds and refreshes the tokens
-3. **Auth Server** (`src/auth-server.ts`): Express server implementing OAuth 2.0 flow with MSAL
-4. **Config Generator** (`src/create-mcp-config.ts`): Utility to create MCP configuration files
+2. **Graph Client** (`src/graph-client.ts`): Graph requests as functype `IO` over `Http.client`, with a typed error channel (`GraphError` = `HttpError | MailboxNotEnabled | PageLimit`)
+3. **CLI Wrapper** (`src/cli.ts`): Executable entry point; it only calls `startServer()`, and `src/token-manager.ts` finds and refreshes the tokens
+4. **Auth Server** (`src/auth-server.ts`): Express server implementing OAuth 2.0 flow with MSAL
+5. **Config Generator** (`src/create-mcp-config.ts`): Utility to create MCP configuration files
 
 ### somamcp Notes
 
@@ -96,7 +97,8 @@ This is a Model Context Protocol (MCP) server that enables AI assistants to inte
 
 ### Key Architectural Patterns
 
-- **Token Management**: Tokens are stored in `tokens.json` and renewed 5 minutes before expiry, and again whenever Graph returns 401 (`refreshRejectedToken`)
+- **functype at the edges**: a tool builds its request as an `IO`, runs it once at the MCP boundary with `.run()`, and folds the `Either` into text (`graphErrorText` renders a failure). No module-level error state. A 401 renews the token and retries once with the same body; paging follows `@odata.nextLink` to the end or the limit, capped at 100 pages. DELETE is read raw (Graph's 204 has no body); every other reply must be JSON
+- **Token Management**: Tokens are stored in `tokens.json` and renewed 5 minutes before expiry, and again whenever Graph returns 401 (`refreshRejectedToken`). `TokenManager` keeps a Promise API but holds tokens as `Option`, reads files with `Try`, renews through `Http`, and joins a renewal already under way for the same refresh token
 - **Multi-tenant Support**: Configurable for different Microsoft account types via TENANT_ID
 - **Error Handling**: Special handling for personal Microsoft accounts (MailboxNotEnabledForRESTAPI)
 - **Type Safety**: Strict TypeScript with Zod 4 schemas for parameter validation
