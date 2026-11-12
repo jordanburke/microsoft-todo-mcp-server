@@ -4,7 +4,7 @@
 // MCP boundary with `.run()`, fold the Either, and render a failure with `graphErrorText`.
 import { Http, HttpError, type HttpMethod, IO } from "functype"
 
-import { tokenManager } from "./token-manager.js"
+import type { GraphAuth } from "./credentials.js"
 
 export const MS_GRAPH_BASE = "https://graph.microsoft.com/v1.0"
 const USER_AGENT = "microsoft-todo-mcp-server/1.0"
@@ -57,24 +57,28 @@ const send = <T>(method: HttpMethod, url: string, token: string, body?: unknown)
       .map((response) => (method === "DELETE" ? (undefined as T) : response.data)),
   )
 
-// A 401 proves the token is dead whatever its recorded expiry says: renew it and retry
-// once. A renewal that fails, or hands back the same token, leaves the 401 standing.
+// A 401 proves the token is dead whatever its recorded expiry says: ask the call's
+// credentials for a replacement and retry once. No replacement, or the same token back,
+// leaves the 401 standing.
 const renewAndRetry = <T>(
   error: HttpError,
   method: HttpMethod,
   url: string,
-  token: string,
+  auth: GraphAuth,
   body?: unknown,
 ): IO<never, HttpError, T> => {
   if (error._tag !== "HttpStatusError" || error.status !== 401) return IO.fail(error)
   console.error("Got 401, attempting token refresh...")
   return IO.tryPromise({
-    try: () => tokenManager.refreshRejectedToken(token),
+    try: () => auth.renew(auth.accessToken),
     catch: (cause) => HttpError.networkError(url, method, cause),
   }).flatMap((renewed) =>
-    renewed && renewed.accessToken !== token
-      ? send<T>(method, url, renewed.accessToken, body)
-      : IO.fail<HttpError>(error),
+    renewed
+      .filter((token) => token !== auth.accessToken)
+      .fold(
+        () => IO.fail<HttpError>(error),
+        (token) => send<T>(method, url, token, body),
+      ),
   )
 }
 
@@ -89,12 +93,12 @@ const classify = (error: HttpError): GraphError => {
 /** One Graph request, renewing the token and retrying once on 401. */
 export const graphRequest = <T>(
   url: string,
-  token: string,
+  auth: GraphAuth,
   method: HttpMethod = "GET",
   body?: unknown,
 ): IO<never, GraphError, T> =>
-  send<T>(method, url, token, body)
-    .catchAll((error) => renewAndRetry<T>(error, method, url, token, body))
+  send<T>(method, url, auth.accessToken, body)
+    .catchAll((error) => renewAndRetry<T>(error, method, url, auth, body))
     .mapError((error) => {
       const classified = classify(error)
       console.error(`Graph request failed: ${method} ${url}: ${graphErrorText(classified)}`)
@@ -108,9 +112,9 @@ export const graphRequest = <T>(
  * until `limit` items are collected. A failed page fails the whole call, so a caller never
  * gets a silently truncated list.
  */
-export const graphRequestAll = <T>(url: string, token: string, limit?: number): IO<never, GraphError, T[]> => {
+export const graphRequestAll = <T>(url: string, auth: GraphAuth, limit?: number): IO<never, GraphError, T[]> => {
   const step = (next: string, items: readonly T[], pages: number): IO<never, GraphError, T[]> =>
-    graphRequest<Page<T>>(next, token).flatMap((page) => {
+    graphRequest<Page<T>>(next, auth).flatMap((page) => {
       const collected = [...items, ...(page.value ?? [])]
       if (limit !== undefined && collected.length >= limit) return IO.succeed(collected.slice(0, limit))
       const link = page["@odata.nextLink"]
