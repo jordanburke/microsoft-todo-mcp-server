@@ -204,8 +204,8 @@ importers:
         specifier: ^1.26.0
         version: 1.26.0
       somamcp:
-        specifier: ^2.4.0
-        version: 2.4.0
+        specifier: ^2.6.0
+        version: 2.6.0
       zod:
         specifier: ^4.6.7
         version: 4.6.7
@@ -319,8 +319,8 @@ packages:
     resolution: {integrity: sha512-IkO+/KEUvwbVpiURZg+P7zF74z5Jxe0UgJxVni+RtoHQ6IZieXaO02kmadomap/q+l6bc/jdPGGqTjhuZnuz1Q==}
     engines: {node: ^20.19.0 || ^22.13.0 || >=24}
 
-  '@hono/node-server@2.1.5':
-    resolution: {integrity: sha512-MgP/I06GdvsilDspMk/qmRzpk8LOUStP6jFAbSRi40W09DhoyUn+Mj7eyKICPqeYKybOjVFLVIAQzvu1bfIa7Q==}
+  '@hono/node-server@2.1.7':
+    resolution: {integrity: sha512-Wr0E6S+v2Bw9FkpGNP5BQ5QbJvclUa06UVehd65WFZe6XeJwbrKQQ5wPDevc0IC+QyzbO7v3Llh5uo45IZcSnA==}
     engines: {node: '>=20'}
     peerDependencies:
       hono: ^4 || ^5.0.0-0
@@ -1280,8 +1280,8 @@ packages:
   function-bind@1.1.2:
     resolution: {integrity: sha512-7XHNxH7qX9xG5mIwxkhumTox/MIRNcOgDrxWsMt2pAr23WHp6MrRlN7FBSFpCpr+oVO0F744iUgR82nJMfG2SA==}
 
-  functype-log@1.23.0:
-    resolution: {integrity: sha512-dU3OuC1q1dGpPV9460K7EvenexN4jDOHCZ73sRkP+fAbGryaaV9Lzitb+rZjjpiDEVQ6ogXDjr9s9gkLh+CQ9A==}
+  functype-log@1.26.0:
+    resolution: {integrity: sha512-siP6cGWSa1J2nqkrd0kaMEs1WRgDK77DM8vMx5l1ihcO8MEr3mrez2P4i5wwWZ+70v/8880+fcKmSFOkura0Lw==}
     engines: {node: '>=18.17.0'}
     peerDependencies:
       functype: '>=0.60.0'
@@ -1340,8 +1340,8 @@ packages:
     resolution: {integrity: sha512-T2UbfbBEF32wiepXIsMlTW9+dDYC6wMh/t/vYA4tuOMKqWz/n3vr1NFSxQiyP+zk2mXsoMA/i/7qV6LKut1t1A==}
     engines: {node: '>= 0.4'}
 
-  hono@4.13.14:
-    resolution: {integrity: sha512-yhRLQ21U6qa9Hsu2N7Qcbh8tE+WKEcoErjIo56LeSGiGXGp9sA7UpE86Ui9uexb61KakiGwuHMn2QdV7w6i6kQ==}
+  hono@4.13.18:
+    resolution: {integrity: sha512-H9q/E1XizaWstJxUW881dmLxEj+t/TrGGnyxINkm4+sK0qUwsMtFdo2BWI9Vs3cIS19MU6b6iCijoUoEf4f3DA==}
     engines: {node: '>=16.9.0'}
 
   hookable@6.1.2:
@@ -1791,8 +1791,13 @@ packages:
     resolution: {integrity: sha512-2wcC/oGxHis/BoHkkPwldgiPSYcpZK3JU28WoMVv55yHJgcZ8rlXvuG9iZggz+sU1d4bRgIGASwyWqjxu3FM0g==}
     engines: {node: '>=18'}
 
-  somamcp@2.4.0:
-    resolution: {integrity: sha512-37Ss5AHCgpDyBUIp1P9w2CQEk98YBhIMpFsahAau10KNoFIGrDpMilY7SHIEOZJ+SZQjT0b/zVkRJahJxQ14Vw==}
+  somamcp@2.6.0:
+    resolution: {integrity: sha512-Rjw5z1UZ3FI5zrNggCdSIEe+BSy7zwNQdRDgkReFb/srZP1EvwrYF0/eYKK/b3pK6samehX0EZXYdAcdwlGgWg==}
+    peerDependencies:
+      '@opentelemetry/api': ^1.9.0
+    peerDependenciesMeta:
+      '@opentelemetry/api':
+        optional: true
 
   source-map-js@1.2.2:
     resolution: {integrity: sha512-KGj/8Y43x35aZVDtt+J4mK1hoLGHULMYfSkODJNQjNDC3oW1PqPoxMwo0pLUsWM/UEGzON/NxeHywEfNXNP3Vw==}
@@ -2192,9 +2197,9 @@ snapshots:
       '@eslint/core': 1.2.1
       levn: 0.4.1
 
-  '@hono/node-server@2.1.5(hono@4.13.14)':
+  '@hono/node-server@2.1.7(hono@4.13.18)':
     dependencies:
-      hono: 4.13.14
+      hono: 4.13.18
 
   '@humanfs/core@0.19.2':
     dependencies:
@@ -3032,7 +3037,7 @@ snapshots:
 
   function-bind@1.1.2: {}
 
-  functype-log@1.23.0(functype@1.26.0):
+  functype-log@1.26.0(functype@1.26.0):
     dependencies:
       functype: 1.26.0
       loglayer: 9.4.0
@@ -3088,7 +3093,7 @@ snapshots:
     dependencies:
       function-bind: 1.1.2
 
-  hono@4.13.14: {}
+  hono@4.13.18: {}
 
   hookable@6.1.2: {}
 
@@ -3534,14 +3539,14 @@ snapshots:
       mrmime: 2.0.1
       totalist: 3.0.1
 
-  somamcp@2.4.0:
+  somamcp@2.6.0:
     dependencies:
-      '@hono/node-server': 2.1.5(hono@4.13.14)
+      '@hono/node-server': 2.1.7(hono@4.13.18)
       '@modelcontextprotocol/client': 2.4.0
       '@modelcontextprotocol/server': 2.4.0
       functype: 1.26.0
-      functype-log: 1.23.0(functype@1.26.0)
-      hono: 4.13.14
+      functype-log: 1.26.0(functype@1.26.0)
+      hono: 4.13.18
       zod: 4.6.7
 
   source-map-js@1.2.2: {}
