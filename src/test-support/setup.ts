@@ -6,9 +6,10 @@
 //   outside those, `fetch` throws instead of reaching Graph or the token endpoint.
 // - HOME, APPDATA and the working directory point at a throwaway directory, so nothing can
 //   read the repo's ./tokens.json or write the real ~/.config.
-import { mkdtempSync } from "fs"
+import { mkdtempSync, rmSync } from "fs"
 import { tmpdir } from "os"
 import { join } from "path"
+import { afterAll } from "vitest"
 
 const home = mkdtempSync(join(tmpdir(), "mstodo-spec-home-"))
 process.env.HOME = home
@@ -19,6 +20,7 @@ for (const key of ["MS_TODO_ACCESS_TOKEN", "MS_TODO_REFRESH_TOKEN", "CLIENT_ID",
   delete process.env[key]
 }
 process.chdir(home)
+afterAll(() => rmSync(home, { recursive: true, force: true }))
 
 globalThis.fetch = (async (input: string | URL | Request) => {
   const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url

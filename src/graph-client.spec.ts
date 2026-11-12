@@ -100,8 +100,9 @@ describe("401 from Graph", () => {
       .onTokenRefresh(renewed("fresh-token"))
 
     await h.callTool("get-task-lists")
-    await h.callTool("get-task-lists")
+    const second = await h.callTool("get-task-lists")
 
+    expect(second.text).toContain("ID: L1")
     expect(h.net.calls.at(-1)?.headers.authorization).toBe("Bearer fresh-token")
     expect(h.net.calls).toHaveLength(4)
     expect(JSON.parse(readFileSync(join(h.dir, "tokens.json"), "utf8"))).toMatchObject({
