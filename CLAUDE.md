@@ -100,7 +100,10 @@ This is a Model Context Protocol (MCP) server that enables AI assistants to inte
 - **Multi-tenant Support**: Configurable for different Microsoft account types via TENANT_ID
 - **Error Handling**: Special handling for personal Microsoft accounts (MailboxNotEnabledForRESTAPI)
 - **Type Safety**: Strict TypeScript with Zod 4 schemas for parameter validation
-- **Tests** live beside the code as `src/*.spec.ts`. The repo's `./tokens.json` is a real credential, so specs `chdir` into a temp directory and point `MSTODO_TOKEN_FILE` there before any `TokenManager` reads tokens. `recurrence.spec.ts` imports `todo-index.ts` dynamically for this, because importing it builds the module's token-manager singleton
+- **Tests** live beside the code as `src/*.spec.ts`. The repo's `./tokens.json` is a real credential, and a successful refresh rewrites Claude Desktop's config under `$HOME`, so specs `chdir` into a temp directory and point `MSTODO_TOKEN_FILE`, `HOME` and `APPDATA` there before any `TokenManager` reads tokens. `src/test-support/graph-harness.ts` does this, then imports a fresh `todo-index.ts` (whose import builds the token-manager singleton) and drives tools through `server.fetch()`
+- **`src/test-support/setup.ts`** (a vitest `setupFiles`) runs before any spec file loads: it makes `fetch` throw, and points `HOME`, `APPDATA`, the token file and the cwd at a throwaway directory. That holds even for code that captures `fetch` or reads `HOME` at import time
+- **Specs touch only the boundaries**: JSON-RPC in, a stubbed `globalThis.fetch` out (`FakeNetwork`: routes per method and path, separate token-endpoint routes). A request no route answers fails the test in `restoreNetwork(h.net)`, unless the spec sets `net.allowUnrouted`. Nothing in between is mocked, so the specs hold across a rewrite of the Graph client or token manager. Paths are compared with the query decoded, so `%24top=3` and `$top=3` match. Mocks match Graph's wire shapes: `noContent()` for a DELETE's 204 with no body, `graphError()` for its error JSON. Vitest pins `TZ=UTC` and an `en_US` locale and uses the forks pool (specs `chdir`). Date-dependent specs fake only `Date`, and start the server under the fake clock
+- **`KNOWN ISSUE:` tests pin today's wrong behaviour** from the list below. A fix flips its test in the same commit
 
 ### Microsoft Graph API Integration
 
@@ -128,7 +131,10 @@ gh release create vX.Y.Z --title vX.Y.Z --generate-notes --verify-tag
 
 ## Known Issues (not yet fixed)
 
-- `delete-task` and `delete-task-list` report success without checking Graph's response, so an unknown ID "succeeds".
+- `delete-task`, `delete-task-list` and `delete-checklist-item` report success without checking Graph's response, so an unknown ID "succeeds".
+- `archive-completed-tasks` counts a task as archived once its copy is created, even if deleting it from the source list then fails (the task ends up in both lists).
+- `test-graph-api-exploration` reports a failed request as `Found! Response: null`, because Graph failures return `null` rather than throwing.
+- Two calls that find the token expired at the same moment each renew it; there is no shared in-flight refresh.
 - `get-tasks` offers `orderby=title`, which Graph rejects, and `count`, which Graph ignores (the server prints the number returned).
 - `get-task-lists-organized` with `groupBy=shared` prints no list IDs, even with `includeIds`.
 - Env-token setups (`MS_TODO_ACCESS_TOKEN`/`MS_TODO_REFRESH_TOKEN`, as `create-mcp-config.ts` writes) cannot renew without `CLIENT_ID`/`CLIENT_SECRET` (and `TENANT_ID` unless it is `organizations`) in the env too: on the env path no stored tokens exist yet to supply them.

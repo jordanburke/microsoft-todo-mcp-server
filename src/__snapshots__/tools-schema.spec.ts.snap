@@ -1,0 +1,736 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`tools/list > keeps every tool's description and input schema 1`] = `
+[
+  {
+    "description": "Move completed tasks older than a specified number of days from one list to another (archive) list. Useful for cleaning up active lists while preserving historical tasks.",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "dryRun": {
+          "default": false,
+          "description": "If true, only preview what would be archived without making changes",
+          "type": "boolean",
+        },
+        "olderThanDays": {
+          "default": 90,
+          "description": "Archive tasks completed more than this many days ago (default: 90)",
+          "minimum": 0,
+          "type": "number",
+        },
+        "sourceListId": {
+          "description": "ID of the source list to archive tasks from",
+          "type": "string",
+        },
+        "targetListId": {
+          "description": "ID of the target archive list",
+          "type": "string",
+        },
+      },
+      "required": [
+        "sourceListId",
+        "targetListId",
+      ],
+      "type": "object",
+    },
+    "name": "archive-completed-tasks",
+  },
+  {
+    "description": "Check if you're authenticated with Microsoft Graph API. Shows current token status and expiration time, and indicates if the token needs to be refreshed.",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {},
+      "type": "object",
+    },
+    "name": "auth-status",
+  },
+  {
+    "description": "Create a new checklist item (subtask) for a task. Checklist items help break down a task into smaller, manageable steps.",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "displayName": {
+          "description": "Text content of the checklist item",
+          "type": "string",
+        },
+        "isChecked": {
+          "description": "Whether the item is checked off",
+          "type": "boolean",
+        },
+        "listId": {
+          "description": "ID of the task list",
+          "type": "string",
+        },
+        "taskId": {
+          "description": "ID of the task",
+          "type": "string",
+        },
+      },
+      "required": [
+        "listId",
+        "taskId",
+        "displayName",
+      ],
+      "type": "object",
+    },
+    "name": "create-checklist-item",
+  },
+  {
+    "description": "Create a new task in a specific Microsoft Todo list. A task is the main todo item that can have a title, description, due date, and other properties. Pass \`recurrence\` to make the task repeat (e.g. monthly bill payments, birthdays, weekly reviews).",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "body": {
+          "description": "Description or body content of the task",
+          "type": "string",
+        },
+        "categories": {
+          "description": "Categories associated with the task",
+          "items": {
+            "type": "string",
+          },
+          "type": "array",
+        },
+        "dueDateTime": {
+          "description": "Due date in ISO format (e.g., 2023-12-31T23:59:59Z)",
+          "type": "string",
+        },
+        "importance": {
+          "description": "Task importance",
+          "enum": [
+            "low",
+            "normal",
+            "high",
+          ],
+          "type": "string",
+        },
+        "isReminderOn": {
+          "description": "Whether to enable reminder for this task",
+          "type": "boolean",
+        },
+        "listId": {
+          "description": "ID of the task list",
+          "type": "string",
+        },
+        "recurrence": {
+          "description": "Recurrence rule. Omit for a one-off task. Requires \`dueDateTime\` to be set (the recurrence derives its first occurrence from it).",
+          "properties": {
+            "pattern": {
+              "properties": {
+                "dayOfMonth": {
+                  "description": "Day of month for absoluteMonthly / absoluteYearly.",
+                  "maximum": 31,
+                  "minimum": 1,
+                  "type": "integer",
+                },
+                "daysOfWeek": {
+                  "description": "Days of week for weekly / relativeMonthly / relativeYearly.",
+                  "items": {
+                    "enum": [
+                      "sunday",
+                      "monday",
+                      "tuesday",
+                      "wednesday",
+                      "thursday",
+                      "friday",
+                      "saturday",
+                    ],
+                    "type": "string",
+                  },
+                  "type": "array",
+                },
+                "firstDayOfWeek": {
+                  "description": "Which day is the start of the week (defaults to sunday).",
+                  "enum": [
+                    "sunday",
+                    "monday",
+                    "tuesday",
+                    "wednesday",
+                    "thursday",
+                    "friday",
+                    "saturday",
+                  ],
+                  "type": "string",
+                },
+                "index": {
+                  "description": "Ordinal position for relativeMonthly / relativeYearly (e.g. 'second' Tuesday).",
+                  "enum": [
+                    "first",
+                    "second",
+                    "third",
+                    "fourth",
+                    "last",
+                  ],
+                  "type": "string",
+                },
+                "interval": {
+                  "description": "How often the pattern repeats (1 = every period, 2 = every second, ...).",
+                  "maximum": 255,
+                  "minimum": 1,
+                  "type": "integer",
+                },
+                "month": {
+                  "description": "Month for absoluteYearly / relativeYearly (1-12).",
+                  "maximum": 12,
+                  "minimum": 1,
+                  "type": "integer",
+                },
+                "type": {
+                  "description": "Recurrence pattern type. daily | weekly | absoluteMonthly (e.g. 15th of every N months) | relativeMonthly (e.g. 2nd Tuesday of every N months) | absoluteYearly | relativeYearly.",
+                  "enum": [
+                    "daily",
+                    "weekly",
+                    "absoluteMonthly",
+                    "relativeMonthly",
+                    "absoluteYearly",
+                    "relativeYearly",
+                  ],
+                  "type": "string",
+                },
+              },
+              "required": [
+                "type",
+                "interval",
+              ],
+              "type": "object",
+            },
+            "range": {
+              "properties": {
+                "endDate": {
+                  "description": "Required when type=endDate; ISO date YYYY-MM-DD.",
+                  "type": "string",
+                },
+                "numberOfOccurrences": {
+                  "description": "Required when type=numbered; how many occurrences before stopping.",
+                  "maximum": 9007199254740991,
+                  "minimum": 1,
+                  "type": "integer",
+                },
+                "recurrenceTimeZone": {
+                  "description": "IANA timezone for the recurrence. In one live test Microsoft To Do stored 'Asia/Kolkata' as UTC, and it keeps only the due date's day, not its time.",
+                  "type": "string",
+                },
+                "startDate": {
+                  "description": "Required for endDate/numbered; ISO date YYYY-MM-DD. Defaults to the task due date if omitted.",
+                  "type": "string",
+                },
+                "type": {
+                  "description": "How long the recurrence repeats: endDate (stops at endDate), noEnd (forever), numbered (stops after N occurrences).",
+                  "enum": [
+                    "endDate",
+                    "noEnd",
+                    "numbered",
+                  ],
+                  "type": "string",
+                },
+              },
+              "required": [
+                "type",
+              ],
+              "type": "object",
+            },
+          },
+          "required": [
+            "pattern",
+            "range",
+          ],
+          "type": "object",
+        },
+        "reminderDateTime": {
+          "description": "Reminder date and time in ISO format",
+          "type": "string",
+        },
+        "startDateTime": {
+          "description": "Start date in ISO format (e.g., 2023-12-31T23:59:59Z)",
+          "type": "string",
+        },
+        "status": {
+          "description": "Status of the task",
+          "enum": [
+            "notStarted",
+            "inProgress",
+            "completed",
+            "waitingOnOthers",
+            "deferred",
+          ],
+          "type": "string",
+        },
+        "title": {
+          "description": "Title of the task",
+          "type": "string",
+        },
+      },
+      "required": [
+        "listId",
+        "title",
+      ],
+      "type": "object",
+    },
+    "name": "create-task",
+  },
+  {
+    "description": "Create a new task list (top-level container) in Microsoft Todo to help organize your tasks into categories or projects.",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "displayName": {
+          "description": "Name of the new task list",
+          "type": "string",
+        },
+      },
+      "required": [
+        "displayName",
+      ],
+      "type": "object",
+    },
+    "name": "create-task-list",
+  },
+  {
+    "description": "Delete a checklist item (subtask) from a task. This removes just the specific subtask, not the parent task.",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "checklistItemId": {
+          "description": "ID of the checklist item to delete",
+          "type": "string",
+        },
+        "listId": {
+          "description": "ID of the task list",
+          "type": "string",
+        },
+        "taskId": {
+          "description": "ID of the task",
+          "type": "string",
+        },
+      },
+      "required": [
+        "listId",
+        "taskId",
+        "checklistItemId",
+      ],
+      "type": "object",
+    },
+    "name": "delete-checklist-item",
+  },
+  {
+    "description": "Delete a task from a Microsoft Todo list. This will remove the task and all its checklist items (subtasks).",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "listId": {
+          "description": "ID of the task list",
+          "type": "string",
+        },
+        "taskId": {
+          "description": "ID of the task to delete",
+          "type": "string",
+        },
+      },
+      "required": [
+        "listId",
+        "taskId",
+      ],
+      "type": "object",
+    },
+    "name": "delete-task",
+  },
+  {
+    "description": "Delete a task list (top-level container) from Microsoft Todo. This will remove the list and all tasks within it.",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "listId": {
+          "description": "ID of the task list to delete",
+          "type": "string",
+        },
+      },
+      "required": [
+        "listId",
+      ],
+      "type": "object",
+    },
+    "name": "delete-task-list",
+  },
+  {
+    "description": "Get checklist items (subtasks) for a specific task. Checklist items are smaller steps or components that belong to a parent task.",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "listId": {
+          "description": "ID of the task list",
+          "type": "string",
+        },
+        "taskId": {
+          "description": "ID of the task",
+          "type": "string",
+        },
+      },
+      "required": [
+        "listId",
+        "taskId",
+      ],
+      "type": "object",
+    },
+    "name": "get-checklist-items",
+  },
+  {
+    "description": "Get all Microsoft Todo task lists (the top-level containers that organize your tasks). Shows list names, IDs, and indicates default or shared lists.",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {},
+      "type": "object",
+    },
+    "name": "get-task-lists",
+  },
+  {
+    "description": "Get all task lists organized into logical folders/categories based on naming patterns, emoji prefixes, and sharing status. Provides a hierarchical view similar to folder organization.",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "groupBy": {
+          "description": "Grouping strategy - 'category' (default), 'shared', or 'type'",
+          "enum": [
+            "category",
+            "shared",
+            "type",
+          ],
+          "type": "string",
+        },
+        "includeIds": {
+          "description": "Include list IDs in output (default: false)",
+          "type": "boolean",
+        },
+      },
+      "type": "object",
+    },
+    "name": "get-task-lists-organized",
+  },
+  {
+    "description": "Get tasks from a specific Microsoft Todo list. These are the main todo items that can contain checklist items (subtasks).",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "count": {
+          "description": "Whether to include a count of tasks",
+          "type": "boolean",
+        },
+        "filter": {
+          "description": "OData $filter query (e.g., 'status eq \\'completed\\'')",
+          "type": "string",
+        },
+        "listId": {
+          "description": "ID of the task list",
+          "type": "string",
+        },
+        "orderby": {
+          "description": "Property to sort by (e.g., 'createdDateTime desc')",
+          "type": "string",
+        },
+        "select": {
+          "description": "Comma-separated subset of the shown fields to include: status, dueDateTime, importance, categories, recurrence, body (e.g., 'status,dueDateTime'). id and title are always included; other names are ignored.",
+          "type": "string",
+        },
+        "skip": {
+          "description": "Number of tasks to skip",
+          "type": "number",
+        },
+        "top": {
+          "description": "Maximum number of tasks to retrieve",
+          "type": "number",
+        },
+      },
+      "required": [
+        "listId",
+      ],
+      "type": "object",
+    },
+    "name": "get-tasks",
+  },
+  {
+    "description": "Test various Graph API queries to discover hidden properties or endpoints for folder/group organization in Microsoft To Do.",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "testType": {
+          "description": "Type of test to run",
+          "enum": [
+            "odata-select",
+            "odata-expand",
+            "headers",
+            "extensions",
+            "all",
+          ],
+          "type": "string",
+        },
+      },
+      "required": [
+        "testType",
+      ],
+      "type": "object",
+    },
+    "name": "test-graph-api-exploration",
+  },
+  {
+    "description": "Update an existing checklist item (subtask). Allows changing the text content or completion status of the subtask.",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "checklistItemId": {
+          "description": "ID of the checklist item to update",
+          "type": "string",
+        },
+        "displayName": {
+          "description": "New text content of the checklist item",
+          "type": "string",
+        },
+        "isChecked": {
+          "description": "Whether the item is checked off",
+          "type": "boolean",
+        },
+        "listId": {
+          "description": "ID of the task list",
+          "type": "string",
+        },
+        "taskId": {
+          "description": "ID of the task",
+          "type": "string",
+        },
+      },
+      "required": [
+        "listId",
+        "taskId",
+        "checklistItemId",
+      ],
+      "type": "object",
+    },
+    "name": "update-checklist-item",
+  },
+  {
+    "description": "Update an existing task in Microsoft Todo. Allows changing any properties of the task including title, due date, importance, and recurrence. To stop a recurring task, pass \`recurrence: null\`. Pass a new \`recurrence\` object to change or add recurrence.",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "body": {
+          "description": "New description or body content of the task",
+          "type": "string",
+        },
+        "categories": {
+          "description": "New categories associated with the task",
+          "items": {
+            "type": "string",
+          },
+          "type": "array",
+        },
+        "dueDateTime": {
+          "description": "New due date in ISO format (e.g., 2023-12-31T23:59:59Z)",
+          "type": "string",
+        },
+        "importance": {
+          "description": "New task importance",
+          "enum": [
+            "low",
+            "normal",
+            "high",
+          ],
+          "type": "string",
+        },
+        "isReminderOn": {
+          "description": "Whether to enable reminder for this task",
+          "type": "boolean",
+        },
+        "listId": {
+          "description": "ID of the task list",
+          "type": "string",
+        },
+        "recurrence": {
+          "anyOf": [
+            {
+              "description": "Recurrence rule. Omit to leave the task one-off. To stop an existing recurring task, set recurrence to null via update-task.",
+              "properties": {
+                "pattern": {
+                  "properties": {
+                    "dayOfMonth": {
+                      "description": "Day of month for absoluteMonthly / absoluteYearly.",
+                      "maximum": 31,
+                      "minimum": 1,
+                      "type": "integer",
+                    },
+                    "daysOfWeek": {
+                      "description": "Days of week for weekly / relativeMonthly / relativeYearly.",
+                      "items": {
+                        "enum": [
+                          "sunday",
+                          "monday",
+                          "tuesday",
+                          "wednesday",
+                          "thursday",
+                          "friday",
+                          "saturday",
+                        ],
+                        "type": "string",
+                      },
+                      "type": "array",
+                    },
+                    "firstDayOfWeek": {
+                      "description": "Which day is the start of the week (defaults to sunday).",
+                      "enum": [
+                        "sunday",
+                        "monday",
+                        "tuesday",
+                        "wednesday",
+                        "thursday",
+                        "friday",
+                        "saturday",
+                      ],
+                      "type": "string",
+                    },
+                    "index": {
+                      "description": "Ordinal position for relativeMonthly / relativeYearly (e.g. 'second' Tuesday).",
+                      "enum": [
+                        "first",
+                        "second",
+                        "third",
+                        "fourth",
+                        "last",
+                      ],
+                      "type": "string",
+                    },
+                    "interval": {
+                      "description": "How often the pattern repeats (1 = every period, 2 = every second, ...).",
+                      "maximum": 255,
+                      "minimum": 1,
+                      "type": "integer",
+                    },
+                    "month": {
+                      "description": "Month for absoluteYearly / relativeYearly (1-12).",
+                      "maximum": 12,
+                      "minimum": 1,
+                      "type": "integer",
+                    },
+                    "type": {
+                      "description": "Recurrence pattern type. daily | weekly | absoluteMonthly (e.g. 15th of every N months) | relativeMonthly (e.g. 2nd Tuesday of every N months) | absoluteYearly | relativeYearly.",
+                      "enum": [
+                        "daily",
+                        "weekly",
+                        "absoluteMonthly",
+                        "relativeMonthly",
+                        "absoluteYearly",
+                        "relativeYearly",
+                      ],
+                      "type": "string",
+                    },
+                  },
+                  "required": [
+                    "type",
+                    "interval",
+                  ],
+                  "type": "object",
+                },
+                "range": {
+                  "properties": {
+                    "endDate": {
+                      "description": "Required when type=endDate; ISO date YYYY-MM-DD.",
+                      "type": "string",
+                    },
+                    "numberOfOccurrences": {
+                      "description": "Required when type=numbered; how many occurrences before stopping.",
+                      "maximum": 9007199254740991,
+                      "minimum": 1,
+                      "type": "integer",
+                    },
+                    "recurrenceTimeZone": {
+                      "description": "IANA timezone for the recurrence. In one live test Microsoft To Do stored 'Asia/Kolkata' as UTC, and it keeps only the due date's day, not its time.",
+                      "type": "string",
+                    },
+                    "startDate": {
+                      "description": "Required for endDate/numbered; ISO date YYYY-MM-DD. Defaults to the task due date if omitted.",
+                      "type": "string",
+                    },
+                    "type": {
+                      "description": "How long the recurrence repeats: endDate (stops at endDate), noEnd (forever), numbered (stops after N occurrences).",
+                      "enum": [
+                        "endDate",
+                        "noEnd",
+                        "numbered",
+                      ],
+                      "type": "string",
+                    },
+                  },
+                  "required": [
+                    "type",
+                  ],
+                  "type": "object",
+                },
+              },
+              "required": [
+                "pattern",
+                "range",
+              ],
+              "type": "object",
+            },
+            {
+              "type": "null",
+            },
+          ],
+          "description": "New recurrence rule for the task. Pass an object to set/change recurrence. Pass \`null\` to make the task one-off (clears any existing recurrence). Omit to leave recurrence untouched.",
+        },
+        "reminderDateTime": {
+          "description": "New reminder date and time in ISO format",
+          "type": "string",
+        },
+        "startDateTime": {
+          "description": "New start date in ISO format (e.g., 2023-12-31T23:59:59Z)",
+          "type": "string",
+        },
+        "status": {
+          "description": "New status of the task",
+          "enum": [
+            "notStarted",
+            "inProgress",
+            "completed",
+            "waitingOnOthers",
+            "deferred",
+          ],
+          "type": "string",
+        },
+        "taskId": {
+          "description": "ID of the task to update",
+          "type": "string",
+        },
+        "title": {
+          "description": "New title of the task",
+          "type": "string",
+        },
+      },
+      "required": [
+        "listId",
+        "taskId",
+      ],
+      "type": "object",
+    },
+    "name": "update-task",
+  },
+  {
+    "description": "Update the name of an existing task list (top-level container) in Microsoft Todo.",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "displayName": {
+          "description": "New name for the task list",
+          "type": "string",
+        },
+        "listId": {
+          "description": "ID of the task list to update",
+          "type": "string",
+        },
+      },
+      "required": [
+        "listId",
+        "displayName",
+      ],
+      "type": "object",
+    },
+    "name": "update-task-list",
+  },
+]
+`;
