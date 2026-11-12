@@ -45,7 +45,8 @@ access; this error means this particular mailbox does not.
 // yields undefined; every other call must return JSON, and an empty or non-JSON 2xx body
 // is a DecodeError.
 const send = <T>(method: HttpMethod, url: string, token: string, body?: unknown): IO<never, HttpError, T> =>
-  IO.sync(() => console.error(`Making request to: ${method} ${url}`)).flatMap(() =>
+  // The query is left out: it can hold a caller's $filter text.
+  IO.sync(() => console.error(`Making request to: ${method} ${url.split("?")[0]}`)).flatMap(() =>
     http
       .request<T>({
         url,
@@ -68,7 +69,7 @@ const renewAndRetry = <T>(
   body?: unknown,
 ): IO<never, HttpError, T> => {
   if (error._tag !== "HttpStatusError" || error.status !== 401) return IO.fail(error)
-  console.error("Got 401, attempting token refresh...")
+  console.error("Got 401, asking the credentials for a new token...")
   return IO.tryPromise({
     try: () => auth.renew(auth.accessToken),
     catch: (cause) => HttpError.networkError(url, method, cause),

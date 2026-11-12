@@ -1,6 +1,6 @@
 // HTTP mode: its settings, its sign-in allow-list, and above all that each caller's tool
 // calls use that caller's own Microsoft token, never the host's.
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs"
+import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "fs"
 import { tmpdir } from "os"
 import { dirname, join, resolve } from "path"
 import type { AuthProvider } from "somamcp"
@@ -8,20 +8,19 @@ import type { AzureSession } from "somamcp/node"
 import { fileURLToPath } from "url"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 
-import { allowListRule, type HttpConfig, readHttpConfig } from "./http-config.js"
-import { createHttpServer } from "./http-server.js"
+import { allowListRule, type HttpConfig, readHttpConfig, redirectPatternProblem } from "./http-config.js"
+import { azureProviderConfig, createHttpServer } from "./http-server.js"
 import { sessionCredentials } from "./session-credentials.js"
 import { FakeNetwork, graphError, json, resetNetwork, restoreNetwork } from "./test-support/graph-harness.js"
 import { createTodoServer } from "./todo-server.js"
 
-const KEY = "k".repeat(48)
 const validEnv = {
   MSTODO_HTTP_BASE_URL: "https://todo.example.com/",
   CLIENT_ID: "client",
   CLIENT_SECRET: "secret",
   TENANT_ID: "consumers",
-  JWT_SIGNING_KEY: KEY,
-  TOKEN_ENCRYPTION_KEY: KEY,
+  JWT_SIGNING_KEY: "j".repeat(48),
+  TOKEN_ENCRYPTION_KEY: "e".repeat(48),
 }
 
 describe("readHttpConfig", () => {
@@ -60,7 +59,17 @@ describe("readHttpConfig", () => {
     [{ MSTODO_HTTP_BASE_URL: "http://todo.example.com" }, "MSTODO_HTTP_BASE_URL must use https"],
     [{ MSTODO_HTTP_BASE_URL: "not a url" }, "MSTODO_HTTP_BASE_URL is not a URL"],
     [{ MSTODO_HTTP_PORT: "70000" }, "MSTODO_HTTP_PORT is not a port"],
-    [{ MSTODO_HTTP_REDIRECT_URIS: "https://*" }, "lets anyone register a host they run"],
+    [{ MSTODO_HTTP_PORT: "0x1F90" }, "MSTODO_HTTP_PORT is not a port"],
+    [{ MSTODO_HTTP_PORT: "3430.0" }, "MSTODO_HTTP_PORT is not a port"],
+    [{ MSTODO_HTTP_BASE_URL: "https://todo.example.com/todo" }, "must be an origin only"],
+    [{ MSTODO_HTTP_BASE_URL: "https://todo.example.com/?a=1" }, "must be an origin only"],
+    [{ MSTODO_HTTP_BASE_URL: "https://todo.example.com/#frag" }, "must be an origin only"],
+    [{ MSTODO_HTTP_BASE_URL: "https://user:pw@todo.example.com" }, "must not hold a user name or password"],
+    [{ TENANT_ID: "../../evil" }, "TENANT_ID must be a tenant id"],
+    [{ TOKEN_ENCRYPTION_KEY: "j".repeat(48) }, "must differ"],
+    [{ MSTODO_HTTP_REDIRECT_URIS: " , " }, "lists no patterns"],
+    [{ MSTODO_HTTP_ALLOWED_USERS: " , " }, "lists no accounts"],
+    [{ MSTODO_HTTP_REDIRECT_URIS: "https://claude.ai*" }, "must name its host exactly"],
   ])("refuses %j", (override, problem) => {
     const problems = readHttpConfig({ ...validEnv, ...override }).fold(
       (found) => found,
@@ -82,6 +91,68 @@ describe("readHttpConfig", () => {
     expect(config.redirectUriPatterns).toEqual(["https://claude.ai/*", "https://app.example.com/callback"])
     expect(config.allowedUsers).toEqual(["someone@outlook.com", "00000000-aaaa"])
     expect(config.storeDirectory).toBe(resolve("store"))
+  })
+})
+
+describe("redirectPatternProblem", () => {
+  // Each of these let a client register a host it runs, because somamcp's * matches . and /.
+  it.each([
+    "https://*",
+    "http://localhost*",
+    "https://claude.ai*",
+    "*",
+    "*://claude.ai/*",
+    "https://app.*.com/cb",
+    "*claude.ai/*",
+    "http*://claude.ai/*",
+    "https://?*",
+    "https://claude.ai@evil.example/*",
+    "https://claude.ai:*/*",
+    "http://claude.ai/*",
+    "claude.ai/*",
+  ])("refuses %s", (pattern) => {
+    expect(redirectPatternProblem(pattern)).toBeDefined()
+  })
+
+  it.each([
+    "https://claude.ai/*",
+    "http://localhost:*/*",
+    "http://127.0.0.1:*/*",
+    "https://app.example.com/callback",
+    "https://app.example.com:8443/cb/*",
+    "http://localhost:3000/cb",
+  ])("accepts %s", (pattern) => {
+    expect(redirectPatternProblem(pattern)).toBeUndefined()
+  })
+})
+
+describe("azureProviderConfig", () => {
+  it("passes every security setting to the provider", () => {
+    const config = readHttpConfig({
+      ...validEnv,
+      TENANT_ID: "11111111-2222-3333-4444-555555555555",
+      MSTODO_HTTP_ALLOWED_USERS: "oid-1",
+    }).orThrow(new Error("expected a config"))
+
+    const provider = azureProviderConfig(config)
+
+    expect(provider).toMatchObject({
+      baseUrl: "https://todo.example.com",
+      clientId: "client",
+      clientSecret: "secret",
+      tenantId: "11111111-2222-3333-4444-555555555555",
+      jwtSigningKey: "j".repeat(48),
+      encryptionKey: "e".repeat(48),
+      allowedRedirectUriPatterns: ["https://claude.ai/*", "http://localhost:*/*", "http://127.0.0.1:*/*"],
+      allowPlainPkce: false,
+    })
+    expect(provider.scopes).toEqual(expect.arrayContaining(["openid", "offline_access", "Tasks.ReadWrite"]))
+    expect(provider.acceptSignIn?.({ oid: "oid-1" })).toBeUndefined()
+    expect(provider.acceptSignIn?.({ oid: "someone-else" })).toBe("This account is not allowed to use this server.")
+  })
+
+  it("sets no sign-in rule without an allow-list", () => {
+    expect(azureProviderConfig(readHttpConfig(validEnv).orThrow(new Error("x"))).acceptSignIn).toBeUndefined()
   })
 })
 
@@ -189,6 +260,14 @@ describe("tool calls over HTTP", () => {
     expect(net.calls).toEqual([])
   })
 
+  it("gives no token to a call without a session", async () => {
+    const auth = await sessionCredentials.graphAuth({ session: undefined } as Parameters<
+      typeof sessionCredentials.graphAuth
+    >[0])
+
+    expect(auth.isNone()).toBe(true)
+  })
+
   it("auth-status reports the caller's sign-in, not the host's tokens", async () => {
     expect((await callAs(server, "bearer-a", "auth-status")).text).toBe(
       "Signed in as a@example.com. The Microsoft token expires at 1/1/2100, 12:00:00 AM.",
@@ -227,6 +306,34 @@ describe("createHttpServer with the Azure provider", () => {
     )
   })
 
+  it("keeps registered clients in the configured store, encrypted", async () => {
+    const response = await http.server.fetch(
+      new Request("https://todo.example.com/oauth/register", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ redirect_uris: ["https://claude.ai/cb"], client_name: "spec-client" }),
+      }),
+    )
+
+    expect(response.status).toBe(201)
+    const stored = readdirSync(store, { recursive: true, withFileTypes: true }).filter((entry) => entry.isFile())
+    expect(stored.length).toBeGreaterThan(0)
+    const contents = stored.map((entry) => readFileSync(join(entry.parentPath, entry.name), "utf8")).join("\n")
+    expect(contents).not.toContain("spec-client")
+  })
+
+  it("refuses to register a redirect URI off the list", async () => {
+    const response = await http.server.fetch(
+      new Request("https://todo.example.com/oauth/register", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ redirect_uris: ["https://evil.example/cb"], client_name: "evil" }),
+      }),
+    )
+
+    expect(response.status).toBe(400)
+  })
+
   it("publishes OAuth metadata with the configured base URL and Graph scopes", async () => {
     const response = await http.server.fetch(
       new Request("https://todo.example.com/.well-known/oauth-authorization-server"),
@@ -249,7 +356,8 @@ describe("what HTTP mode imports", () => {
       if (seen.has(file)) return
       seen.add(file)
       const source = readFileSync(file, "utf8")
-      for (const [, spec] of source.matchAll(/from\s+"(\.{1,2}\/[^"]+)"/g)) {
+      // from "./x", import "./x" and import("./x")
+      for (const [, spec] of source.matchAll(/(?:from|import)\s*\(?\s*"(\.{1,2}\/[^"]+)"/g)) {
         visit(resolve(dirname(file), spec.replace(/\.js$/, ".ts")))
       }
     }

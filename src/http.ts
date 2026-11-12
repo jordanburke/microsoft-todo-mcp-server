@@ -16,9 +16,20 @@ readHttpConfig(process.env).fold(
     process.exit(1)
   },
   (config) => {
-    startHttpServer(config).catch((error) => {
-      console.error("Error starting the HTTP server:", error instanceof Error ? error.message : String(error))
-      process.exit(1)
-    })
+    startHttpServer(config).then(
+      ({ server, provider }) => {
+        // Stop taking requests and stop the provider's timers before exiting.
+        const shutdown = () => {
+          provider.close()
+          server.stop().finally(() => process.exit(0))
+        }
+        process.once("SIGTERM", shutdown)
+        process.once("SIGINT", shutdown)
+      },
+      (error) => {
+        console.error("Error starting the HTTP server:", error instanceof Error ? error.message : String(error))
+        process.exit(1)
+      },
+    )
   },
 )
