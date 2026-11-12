@@ -78,13 +78,14 @@ Built with **ts-builds 4.0.2** (tsdown, vitest 5) on **pnpm 12**. Non-obvious, l
 
 ## Architecture Overview
 
-This is a Model Context Protocol (MCP) server that enables AI assistants to interact with Microsoft To Do via the Microsoft Graph API. The codebase follows a modular architecture with five main components:
+This is a Model Context Protocol (MCP) server that enables AI assistants to interact with Microsoft To Do via the Microsoft Graph API. The codebase follows a modular architecture with these main components:
 
-1. **MCP Server** (`src/todo-index.ts`): Built on somamcp 2.6 (MCP SDK 2.x underneath), serving 17 tools over stdio: 16 for Microsoft To Do plus somamcp's `info`
-2. **Graph Client** (`src/graph-client.ts`): Graph requests as functype `IO` over `Http.client`, with a typed error channel (`GraphError` = `HttpError | MailboxNotEnabled | PageLimit`)
-3. **CLI Wrapper** (`src/cli.ts`): Executable entry point; it only calls `startServer()`, and `src/token-manager.ts` finds and refreshes the tokens
-4. **Auth Server** (`src/auth-server.ts`): Express server implementing OAuth 2.0 flow with MSAL
-5. **Config Generator** (`src/create-mcp-config.ts`): writes an `mcp.json` whose entry sets `MSTODO_TOKEN_FILE` to the token file; it copies no tokens
+1. **MCP Server** (`src/todo-server.ts`): `createTodoServer({ credentials, auth? })` builds a somamcp 2.6 server (MCP SDK 2.x underneath) with 17 tools: 16 for Microsoft To Do plus somamcp's `info`. Each tool call gets its Graph token from `credentials` (`src/credentials.ts`: a `CredentialSource`), never from the token manager directly
+2. **stdio entry** (`src/todo-index.ts`): `server` is `createTodoServer` with `localCredentials` (`src/local-credentials.ts`), the token manager's tokens; `startServer()` serves it over stdio. Only `local-credentials.ts` imports the token manager
+3. **Graph Client** (`src/graph-client.ts`): Graph requests as functype `IO` over `Http.client`, with a typed error channel (`GraphError` = `HttpError | MailboxNotEnabled | PageLimit`). A request takes the call's `GraphAuth`: its token, and `renew` for a 401
+4. **CLI Wrapper** (`src/cli.ts`): Executable entry point; it only calls `startServer()`, and `src/token-manager.ts` finds and refreshes the tokens
+5. **Auth Server** (`src/auth-server.ts`): Express server implementing OAuth 2.0 flow with MSAL
+6. **Config Generator** (`src/create-mcp-config.ts`): writes an `mcp.json` whose entry sets `MSTODO_TOKEN_FILE` to the token file; it copies no tokens
 
 ### somamcp Notes
 
