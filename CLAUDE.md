@@ -100,7 +100,9 @@ This is a Model Context Protocol (MCP) server that enables AI assistants to inte
 - **Multi-tenant Support**: Configurable for different Microsoft account types via TENANT_ID
 - **Error Handling**: Special handling for personal Microsoft accounts (MailboxNotEnabledForRESTAPI)
 - **Type Safety**: Strict TypeScript with Zod 4 schemas for parameter validation
-- **Tests** live beside the code as `src/*.spec.ts`. The repo's `./tokens.json` is a real credential, so specs `chdir` into a temp directory and point `MSTODO_TOKEN_FILE` there before any `TokenManager` reads tokens. `recurrence.spec.ts` imports `todo-index.ts` dynamically for this, because importing it builds the module's token-manager singleton
+- **Tests** live beside the code as `src/*.spec.ts`. The repo's `./tokens.json` is a real credential, and a successful refresh rewrites Claude Desktop's config under `$HOME`, so specs `chdir` into a temp directory and point `MSTODO_TOKEN_FILE`, `HOME` and `APPDATA` there before any `TokenManager` reads tokens. `src/test-support/graph-harness.ts` does this, then imports a fresh `todo-index.ts` (whose import builds the token-manager singleton) and drives tools through `server.fetch()`
+- **Specs touch only the boundaries**: JSON-RPC in, a stubbed `globalThis.fetch` out (`FakeNetwork`: routes per method and path, a 599 for anything unrouted, separate token-endpoint routes). Nothing in between is mocked, so the specs hold across a rewrite of the Graph client or token manager. Mocks match Graph's wire shapes: `noContent()` for a DELETE's 204 with no body, `graphError()` for its error JSON, exact request URLs (`get-tasks` URL-encodes its OData parameters; `archive-completed-tasks` sends its `$filter` raw). Vitest pins `TZ=UTC`, and date-dependent specs fake only `Date`
+- **`KNOWN ISSUE:` tests pin today's wrong behaviour** from the list below. A fix flips its test in the same commit
 
 ### Microsoft Graph API Integration
 
