@@ -19,6 +19,7 @@
     "dev": "ts-builds build && node dist/cli.js",
     "start": "node dist/cli.js",
     "cli": "node dist/cli.js",
+    "http": "node dist/http.js",
     "auth": "node dist/auth-server.js",
     "setup": "node dist/setup.js",
     "create-config": "node dist/create-mcp-config.js",
@@ -63,7 +64,8 @@
     "microsoft-todo-mcp-server": "./dist/cli.js",
     "mstodo": "./dist/cli.js",
     "mstodo-config": "./dist/create-mcp-config.js",
-    "mstodo-setup": "./dist/setup.js"
+    "mstodo-setup": "./dist/setup.js",
+    "mstodo-http": "./dist/http.js"
   },
   "files": [
     "dist"

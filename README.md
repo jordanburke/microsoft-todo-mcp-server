@@ -56,12 +56,13 @@ pnpm install -g microsoft-todo-mcp-server
 npx microsoft-todo-mcp-server
 ```
 
-The package provides four commands:
+The package provides five commands:
 
 - `microsoft-todo-mcp-server` - The MCP server
 - `mstodo` - Short alias for the MCP server
 - `mstodo-config` - Writes an `mcp.json` that points the server at your `tokens.json`
 - `mstodo-setup` - Guided setup. It does not yet finish on its own after you sign in, so use the steps under [Usage](#usage) instead
+- `mstodo-http` - The MCP server over HTTP, for remote clients; each user signs in with their own Microsoft account (see [HTTP Mode](#http-mode-remote-clients))
 
 ### Option 2: Clone and Run Locally
 
@@ -81,7 +82,7 @@ pnpm run build
    - **Accounts in this organizational directory only (Single tenant)** - For use within a single organization
    - **Accounts in any organizational directory (Any Azure AD directory - Multitenant)** - For use across multiple organizations
    - **Accounts in any organizational directory and personal Microsoft accounts** - For both work accounts and personal accounts
-5. Add a **Web** platform redirect URI: `http://localhost:3000/callback`
+5. Add a **Web** platform redirect URI: `http://localhost:3000/callback`. For [HTTP Mode](#http-mode-remote-clients), also add `<your base URL>/oauth/callback`
 6. After creating the app, go to "Certificates & secrets" and create a new client secret. Note when it expires: sign-in and token renewal stop working on that date
 7. Go to "API permissions" and add these Microsoft Graph delegated permissions. The sign-in requests these (plus the standard `openid` and `profile`), so adding them here is what lets an admin approve them ahead of time:
    - `Tasks.Read`, `Tasks.ReadWrite`, `Tasks.Read.Shared`, `Tasks.ReadWrite.Shared`
@@ -245,6 +246,41 @@ pnpm run format:check # Check code formatting
 pnpm run lint         # Run linting checks
 pnpm run typecheck    # TypeScript type checking
 ```
+
+## HTTP Mode (remote clients)
+
+`mstodo-http` serves the same tools over Streamable HTTP, for clients that connect by URL, such as a Claude custom connector. It is its own OAuth server in front of Microsoft, built on somamcp's Azure provider:
+
+- **Each user signs in with their own Microsoft account**, and each tool call uses that user's token. The host's `tokens.json` and `MS_TODO_*` variables are never read in this mode.
+- **The client never sees a Microsoft token.** It gets the server's own tokens; Microsoft's stay in an encrypted store on the server, which renews them when the client refreshes.
+- **Stateless:** each request is served on its own, and sign-ins live in the store, not in memory. Several instances can sit behind a load balancer if they share the store directory and both keys.
+
+### Setup
+
+1. **On the app registration** (see [Azure App Registration](#azure-app-registration)), add a **Web** redirect URI: `<your base URL>/oauth/callback`, for example `https://todo.example.com/oauth/callback`.
+2. **Set these**, in the environment or a `.env` in the working directory:
+
+| Variable                                  | Required    | Meaning                                                                                                                                                                                                                                                                                                                                                                                           |
+| ----------------------------------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `MSTODO_HTTP_BASE_URL`                    | yes         | The server's public origin, such as `https://todo.example.com`: `https` (plain `http` only for `localhost`), with no path. A reverse proxy that mounts the server under a path must strip it.                                                                                                                                                                                                     |
+| `CLIENT_ID`, `CLIENT_SECRET`, `TENANT_ID` | yes         | The app registration. Use the tenant's id (a GUID) for a work or school tenant: sign-ins from other tenants are then refused. Use `consumers` for personal accounts only; `common` on a multi-tenant app also admits every work or school tenant.                                                                                                                                                 |
+| `JWT_SIGNING_KEY`, `TOKEN_ENCRYPTION_KEY` | yes         | Two different keys of at least 32 characters, such as `openssl rand -base64 48`. Keep them: changing either signs everyone out.                                                                                                                                                                                                                                                                   |
+| `MSTODO_HTTP_ALLOWED_USERS`               | recommended | Comma-separated accounts allowed to sign in, by object id, sign-in name or email. With `common` or `organizations`, list object ids: another tenant can issue an id token with any email in it. Without the setting, any account the app registration accepts can sign in, and each sees only its own To Do.                                                                                      |
+| `MSTODO_HTTP_PORT`, `MSTODO_HTTP_HOST`    | no          | Where to listen. Defaults: `3100` on `127.0.0.1`. Use `0.0.0.0` in a container.                                                                                                                                                                                                                                                                                                                   |
+| `MSTODO_HTTP_STORE`                       | no          | Where sign-ins are stored, encrypted. Default `~/.config/microsoft-todo-mcp/http-store`. It must be writable; the server checks at startup.                                                                                                                                                                                                                                                       |
+| `MSTODO_HTTP_REDIRECT_URIS`               | no          | Comma-separated redirect URI patterns a client may register. Default: `https://claude.ai/*`, `http://localhost:*/*`, `http://127.0.0.1:*/*`. A `*` matches any characters, including `.` and `/`, so each pattern must spell out its scheme and host: `https://claude.ai*` would admit `https://claude.ai.evil.example/`, and is refused. Only `localhost` may use `http` or leave the port open. |
+
+3. **Run it** behind HTTPS (a reverse proxy such as Caddy or nginx, or a tunnel):
+
+```bash
+mstodo-http          # or: npx -p microsoft-todo-mcp-server mstodo-http
+```
+
+It refuses to start, and lists what is wrong, until every required setting is valid.
+
+4. **Connect a client** to `<your base URL>/mcp`. The client discovers the OAuth endpoints, registers itself, and sends you to Microsoft to sign in.
+
+`auth-status` reports who is signed in and when their Microsoft token expires.
 
 ## MCP Tools
 

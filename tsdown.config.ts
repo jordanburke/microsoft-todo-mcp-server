@@ -13,6 +13,7 @@ export default defineConfig({
     "src/auth-server.ts",
     "src/setup.ts",
     "src/token-manager.ts",
+    "src/http.ts",
   ],
   outDir: "dist",
   format: ["esm"],

@@ -83,9 +83,10 @@ This is a Model Context Protocol (MCP) server that enables AI assistants to inte
 1. **MCP Server** (`src/todo-server.ts`): `createTodoServer({ credentials, auth? })` builds a somamcp 2.6 server (MCP SDK 2.x underneath) with 17 tools: 16 for Microsoft To Do plus somamcp's `info`. Each tool call gets its Graph token from `credentials` (`src/credentials.ts`: a `CredentialSource`), never from the token manager directly
 2. **stdio entry** (`src/todo-index.ts`): `server` is `createTodoServer` with `localCredentials` (`src/local-credentials.ts`), the token manager's tokens; `startServer()` serves it over stdio. Only `local-credentials.ts` imports the token manager
 3. **Graph Client** (`src/graph-client.ts`): Graph requests as functype `IO` over `Http.client`, with a typed error channel (`GraphError` = `HttpError | MailboxNotEnabled | PageLimit`). A request takes the call's `GraphAuth`: its token, and `renew` for a 401
-4. **CLI Wrapper** (`src/cli.ts`): Executable entry point; it only calls `startServer()`, and `src/token-manager.ts` finds and refreshes the tokens
-5. **Auth Server** (`src/auth-server.ts`): Express server implementing OAuth 2.0 flow with MSAL
-6. **Config Generator** (`src/create-mcp-config.ts`): writes an `mcp.json` whose entry sets `MSTODO_TOKEN_FILE` to the token file; it copies no tokens
+4. **HTTP mode** (`src/http.ts`, bin `mstodo-http`): `src/http-config.ts` reads and validates the env, refusing to start on any problem (so somamcp never falls back to random keys); `redirectPatternProblem` requires a literal scheme and host in each redirect pattern, because somamcp's glob `*` crosses `.` and `/`; `src/http-server.ts` builds somamcp's Azure provider from `azureProviderConfig` (a pure function the spec pins field by field; PKCE `plain` off) (`createAzureProvider`, `createDiskStore`, an optional `MSTODO_HTTP_ALLOWED_USERS` allow-list as `acceptSignIn`) and `createTodoServer` with `sessionCredentials` (`src/session-credentials.ts`): each call's own `session.accessToken`, no renewal (the client's refresh renews Microsoft's token), no fallback. `http-mode.spec.ts` walks the import graph from `http.ts` and fails if it reaches `token-manager.ts` or `local-credentials.ts`
+5. **CLI Wrapper** (`src/cli.ts`): Executable entry point; it only calls `startServer()`, and `src/token-manager.ts` finds and refreshes the tokens
+6. **Auth Server** (`src/auth-server.ts`): Express server implementing OAuth 2.0 flow with MSAL
+7. **Config Generator** (`src/create-mcp-config.ts`): writes an `mcp.json` whose entry sets `MSTODO_TOKEN_FILE` to the token file; it copies no tokens
 
 ### somamcp Notes
 
