@@ -1,8 +1,8 @@
 // The tool surface an MCP client sees: names, descriptions, input schemas and annotations.
 // The snapshot makes any change to it, intended or not, show up in review.
-import { afterAll, beforeAll, describe, expect, it } from "vitest"
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest"
 
-import { type Harness, startServer } from "./test-support/graph-harness.js"
+import { type Harness, resetNetwork, restoreNetwork, startServer } from "./test-support/graph-harness.js"
 
 let h: Harness
 
@@ -11,6 +11,9 @@ beforeAll(async () => {
 })
 
 afterAll(() => h.cleanup())
+// Validation should stop these calls before any request; the fake network fails the test if one is sent.
+beforeEach(() => resetNetwork(h.net))
+afterEach(() => restoreNetwork(h.net))
 
 describe("tools/list", () => {
   it("lists the 16 To Do tools plus somamcp's info tool", async () => {

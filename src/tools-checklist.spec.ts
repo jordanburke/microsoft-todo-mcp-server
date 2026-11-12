@@ -19,7 +19,7 @@ beforeAll(async () => {
 })
 afterAll(() => h.cleanup())
 beforeEach(() => resetNetwork(h.net))
-afterEach(() => restoreNetwork())
+afterEach(() => restoreNetwork(h.net))
 
 const TASK = "/me/todo/lists/L1/tasks/T1"
 const ITEMS = `${TASK}/checklistItems`

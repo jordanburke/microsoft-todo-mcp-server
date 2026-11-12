@@ -13,22 +13,25 @@ import {
 
 let h: Harness
 
+const NOW = new Date("2026-11-11T12:00:00Z")
+
+// Only Date is faked, so the server's own timers and promises run normally. The server
+// starts under the fake clock too, so its token's expiry is read against the same time.
 beforeAll(async () => {
+  vi.useFakeTimers({ toFake: ["Date"] })
+  vi.setSystemTime(NOW)
   h = await startServer()
 })
-afterAll(() => h.cleanup())
-beforeEach(() => {
-  resetNetwork(h.net)
-  // Only Date is faked, so the server's own timers and promises run normally.
-  vi.useFakeTimers({ toFake: ["Date"] })
-  vi.setSystemTime(new Date("2026-11-11T12:00:00Z"))
-})
-afterEach(() => {
+afterAll(() => {
   vi.useRealTimers()
-  restoreNetwork()
+  h.cleanup()
 })
+beforeEach(() => {
+  vi.setSystemTime(NOW)
+  resetNetwork(h.net)
+})
+afterEach(() => restoreNetwork(h.net))
 
-// Sent as a raw string, not URL-encoded: the archive tool builds this URL by hand.
 const COMPLETED = "/me/todo/lists/SRC/tasks?$filter=status eq 'completed'"
 
 const done = (id: string, completed: string | undefined, extra: Record<string, unknown> = {}) => ({

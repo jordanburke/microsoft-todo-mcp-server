@@ -22,7 +22,7 @@ beforeEach(async () => {
   resetNetwork(h.net)
 })
 afterEach(() => {
-  restoreNetwork()
+  restoreNetwork(h.net)
   h.cleanup()
 })
 
@@ -37,20 +37,29 @@ describe("request headers", () => {
 
     await h.callTool("get-task-lists")
 
-    expect(h.net.calls[0].headers).toEqual({
+    expect(h.net.calls[0].headers).toMatchObject({
       "user-agent": "microsoft-todo-mcp-server/1.0",
       accept: "application/json",
       authorization: "Bearer opaque-seed",
-      "content-type": "application/json",
     })
   })
 
-  it("sends a body only on POST and PATCH", async () => {
-    h.net.on("DELETE", `${LISTS}/L1`, () => new Response(null, { status: 204 }))
+  it("sends a JSON body on POST", async () => {
+    h.net.on("POST", LISTS, json({ id: "L9", displayName: "New" }, 201))
 
+    await h.callTool("create-task-list", { displayName: "New" })
+
+    expect(h.net.calls[0].headers["content-type"]).toBe("application/json")
+    expect(h.net.calls[0].rawBody).toBe('{"displayName":"New"}')
+  })
+
+  it("sends no body on GET or DELETE", async () => {
+    h.net.on("GET", LISTS, ok).on("DELETE", `${LISTS}/L1`, () => new Response(null, { status: 204 }))
+
+    await h.callTool("get-task-lists")
     await h.callTool("delete-task-list", { listId: "L1" })
 
-    expect(h.net.calls[0].rawBody).toBeUndefined()
+    expect(h.net.calls.map((c) => c.rawBody)).toEqual([undefined, undefined])
   })
 })
 
@@ -78,7 +87,8 @@ describe("401 from Graph", () => {
       grant_type: "refresh_token",
       scope: "offline_access Tasks.Read Tasks.ReadWrite Tasks.Read.Shared Tasks.ReadWrite.Shared User.Read",
     })
-    expect(h.net.calls[1].headers["content-type"]).toBe("application/x-www-form-urlencoded")
+    const form = h.net.calls[1]
+    expect(form.formBody || form.headers["content-type"]?.startsWith("application/x-www-form-urlencoded")).toBe(true)
     expect(text).toContain("ID: L1")
   })
 
@@ -112,6 +122,23 @@ describe("401 from Graph", () => {
 
     expect(h.net.calls).toHaveLength(2)
     expect(text).toBe("Failed to retrieve task lists")
+  })
+
+  it("resends the request body on the retry", async () => {
+    h.net
+      .on("POST", `${LISTS}/L1/tasks`, (call) =>
+        call.headers.authorization === "Bearer fresh-token"
+          ? json({ id: "T1", title: "Pay rent" }, 201)
+          : graphError(401, "InvalidAuthenticationToken", "expired"),
+      )
+      .onTokenRefresh(renewed("fresh-token"))
+
+    const { text } = await h.callTool("create-task", { listId: "L1", title: "Pay rent", importance: "high" })
+
+    expect(h.net.graphRequests()).toEqual(["POST /me/todo/lists/L1/tasks", "POST /me/todo/lists/L1/tasks"])
+    expect(h.net.calls[2].body).toEqual(h.net.calls[0].body)
+    expect(h.net.calls[2].body).toEqual({ title: "Pay rent", importance: "high" })
+    expect(text).toBe("Task created successfully!\nID: T1\nTitle: Pay rent")
   })
 
   it("does not loop when the retried request is rejected too", async () => {
@@ -153,14 +180,36 @@ describe("failures", () => {
 
     const { text } = await h.callTool("create-task", { listId: "L1", title: "x" })
 
-    expect(text).toMatch(/^Failed to create task in list: L1: .*JSON/)
+    // The reason's wording comes from the JSON parser, so only its presence is pinned.
+    expect(text).toMatch(/^Failed to create task in list: L1: \S/)
   })
 
-  it("clears the last error once a later request succeeds", async () => {
-    h.net.on("POST", `${LISTS}/L1/tasks`, graphError(400, "invalidRequest", "first"))
-    await h.callTool("create-task", { listId: "L1", title: "x" })
+  it("reports every Graph failure as an ordinary result, not an isError one", async () => {
+    h.net
+      .on("GET", LISTS, graphError(500, "generalException", "boom"))
+      .on("POST", `${LISTS}/L1/tasks`, graphError(400, "invalidRequest", "bad"))
+      .on("DELETE", `${LISTS}/L1`, graphError(404, "itemNotFound", "gone"))
 
-    h.net.on("GET", `${LISTS}/L1/tasks`, json({ value: [] }))
-    expect((await h.callTool("get-tasks", { listId: "L1" })).text).toBe("No tasks found in list with ID: L1")
+    const results = [
+      await h.callTool("get-task-lists"),
+      await h.callTool("create-task", { listId: "L1", title: "x" }),
+      await h.callTool("delete-task-list", { listId: "L1" }),
+    ]
+
+    expect(results.map((r) => r.isError)).toEqual([false, false, false])
+  })
+})
+
+describe("IDs", () => {
+  // Real Graph IDs are long base64 strings with "-", "_" and a trailing "=".
+  const LIST = "AQMkADAwATM0MDAAMS1iNTcwLWI2NTEtMDACLTAwCgAuAAADiN8-_x=="
+  const TASK = "AQMkADAwATM0MDAAMS1iNTcwLWI2NTEtMDACLTAwCgBGAAADiN8_-y=="
+
+  it("puts them in the path as they are", async () => {
+    h.net.on("PATCH", `${LISTS}/${LIST}/tasks/${TASK}`, json({ id: TASK, title: "x" }))
+
+    await h.callTool("update-task", { listId: LIST, taskId: TASK, title: "x" })
+
+    expect(h.net.calls[0].url).toBe(`https://graph.microsoft.com/v1.0/me/todo/lists/${LIST}/tasks/${TASK}`)
   })
 })

@@ -404,9 +404,16 @@ describe("storeCredentials", () => {
 })
 
 describe("Claude Desktop config after a renewal", () => {
-  const claudeConfig = () => join(dir, ".config", "Claude", "claude_desktop_config.json")
+  // Where the token manager looks on each platform, under the temp HOME/APPDATA.
+  const claudeDir = () =>
+    process.platform === "win32"
+      ? join(process.env.APPDATA ?? "", "Claude")
+      : process.platform === "darwin"
+        ? join(dir, "Library", "Application Support", "Claude")
+        : join(dir, ".config", "Claude")
+  const claudeConfig = () => join(claudeDir(), "claude_desktop_config.json")
   const writeClaudeConfig = (config: unknown) => {
-    mkdirSync(join(dir, ".config", "Claude"), { recursive: true })
+    mkdirSync(claudeDir(), { recursive: true })
     writeFileSync(claudeConfig(), JSON.stringify(config))
   }
 

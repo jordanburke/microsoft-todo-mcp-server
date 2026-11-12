@@ -4,9 +4,13 @@ export default defineConfig({
   test: {
     globals: true,
     environment: "node",
-    // Tool output formats dates with toLocaleDateString(); pin the zone so specs read the
-    // same on every machine and in CI.
-    env: { TZ: "UTC" },
+    // Specs chdir into temp directories, which worker threads do not allow.
+    pool: "forks",
+    // Blocks the real network and moves HOME before any spec file is imported.
+    setupFiles: ["./src/test-support/setup.ts"],
+    // Tool output formats dates with toLocaleString()/toLocaleDateString(); pin the zone and
+    // the locale so specs read the same on every machine and in CI.
+    env: { TZ: "UTC", LC_ALL: "en_US.UTF-8", LANG: "en_US.UTF-8" },
     coverage: {
       provider: "v8",
       reporter: ["text", "json", "html"],

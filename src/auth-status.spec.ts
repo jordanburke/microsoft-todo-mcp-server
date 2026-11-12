@@ -25,7 +25,7 @@ beforeEach(() => {
 })
 afterEach(() => {
   vi.useRealTimers()
-  restoreNetwork()
+  restoreNetwork(h.net)
   h.cleanup()
 })
 

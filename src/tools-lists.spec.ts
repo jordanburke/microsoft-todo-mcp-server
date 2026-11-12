@@ -18,7 +18,7 @@ beforeAll(async () => {
 })
 afterAll(() => h.cleanup())
 beforeEach(() => resetNetwork(h.net))
-afterEach(() => restoreNetwork())
+afterEach(() => restoreNetwork(h.net))
 
 const LISTS = [
   { id: "L-default", displayName: "Tasks", wellknownListName: "defaultList", isOwner: true, isShared: false },

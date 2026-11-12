@@ -20,7 +20,7 @@ beforeAll(async () => {
 })
 afterAll(() => h.cleanup())
 beforeEach(() => resetNetwork(h.net))
-afterEach(() => restoreNetwork())
+afterEach(() => restoreNetwork(h.net))
 
 const TASKS = "/me/todo/lists/L1/tasks"
 
@@ -79,7 +79,7 @@ describe("get-tasks", () => {
     })
 
     expect(h.net.graphRequests()).toEqual([
-      `GET ${TASKS}?%24filter=status+eq+%27completed%27&%24orderby=createdDateTime+desc&%24top=5&%24skip=2&%24count=true`,
+      `GET ${TASKS}?$filter=status eq 'completed'&$orderby=createdDateTime desc&$top=5&$skip=2&$count=true`,
     ])
   })
 
@@ -114,7 +114,7 @@ describe("get-tasks", () => {
 
     const { text } = await h.callTool("get-tasks", { listId: "L1", top: 3 })
 
-    expect(h.net.graphRequests()).toEqual([`GET ${TASKS}?%24top=3`, `GET ${TASKS}?$skip=2`])
+    expect(h.net.graphRequests()).toEqual([`GET ${TASKS}?$top=3`, `GET ${TASKS}?$skip=2`])
     expect(text).toContain("ID: T3")
     expect(text).not.toContain("ID: T4")
   })
