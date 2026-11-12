@@ -110,6 +110,8 @@ describe("redirectPatternProblem", () => {
     "https://claude.ai:*/*",
     "http://claude.ai/*",
     "claude.ai/*",
+    "http://LOCALHOST:*/*",
+    "http://[::1]evil.example/*",
   ])("refuses %s", (pattern) => {
     expect(redirectPatternProblem(pattern)).toBeDefined()
   })
@@ -121,6 +123,7 @@ describe("redirectPatternProblem", () => {
     "https://app.example.com/callback",
     "https://app.example.com:8443/cb/*",
     "http://localhost:3000/cb",
+    "http://[::1]:*/*",
   ])("accepts %s", (pattern) => {
     expect(redirectPatternProblem(pattern)).toBeUndefined()
   })
@@ -270,7 +273,7 @@ describe("tool calls over HTTP", () => {
 
   it("auth-status reports the caller's sign-in, not the host's tokens", async () => {
     expect((await callAs(server, "bearer-a", "auth-status")).text).toBe(
-      "Signed in as a@example.com. The Microsoft token expires at 1/1/2100, 12:00:00 AM.",
+      "Signed in as a@example.com. The Microsoft token expires at 1/1/2100, 12:00:00 AM UTC.",
     )
     expect((await callAs(server, "bearer-b", "auth-status")).text).toBe("Signed in as b@example.com.")
   })

@@ -102,7 +102,7 @@ export const graphRequest = <T>(
     .catchAll((error) => renewAndRetry<T>(error, method, url, auth, body))
     .mapError((error) => {
       const classified = classify(error)
-      console.error(`Graph request failed: ${method} ${url}: ${graphErrorText(classified)}`)
+      console.error(`Graph request failed: ${method} ${url.split("?")[0]}: ${graphErrorText(classified)}`)
       return classified
     })
     // Logs the size, not the content: over HTTP the content is a signed-in user's tasks.

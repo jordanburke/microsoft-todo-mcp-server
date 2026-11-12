@@ -194,6 +194,19 @@ describe("failures", () => {
     expect(logged.some((line) => line.includes("status: 500") && line.includes("generalException"))).toBe(true)
   })
 
+  it("leaves a request's query, which can hold a caller's $filter, out of the log", async () => {
+    h.net.on("GET", /^\/me\/todo\/lists\/L1\/tasks\?/, graphError(400, "badRequest", "nope"))
+
+    await h.callTool("get-tasks", { listId: "L1", filter: "title eq 'secret plans'" })
+
+    const logged = vi
+      .mocked(console.error)
+      .mock.calls.map((args) => args.join(" "))
+      .join("\n")
+    expect(logged).toContain("Graph request failed: GET https://graph.microsoft.com/v1.0/me/todo/lists/L1/tasks:")
+    expect(logged).not.toContain("secret")
+  })
+
   it("reports every Graph failure as an ordinary result, not an isError one", async () => {
     h.net
       .on("GET", LISTS, graphError(500, "generalException", "boom"))
