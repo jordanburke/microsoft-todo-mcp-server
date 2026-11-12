@@ -30,7 +30,7 @@
     "test": "ts-builds test",
     "test:watch": "ts-builds test:watch",
     "prepublishOnly": "pnpm validate && pnpm check:server-json",
-    "postinstall": "echo 'Run: npx microsoft-todo-mcp-server setup' to configure",
+    "postinstall": "echo 'To sign in, run: npx -p microsoft-todo-mcp-server mstodo-setup'",
     "sync:server-json": "node scripts/sync-server-json.mjs",
     "check:server-json": "node scripts/sync-server-json.mjs --check",
     "version": "node scripts/sync-server-json.mjs && git add server.json"
