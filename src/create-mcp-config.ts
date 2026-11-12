@@ -6,6 +6,8 @@
 import fs from "fs"
 import path from "path"
 
+import { isMain } from "./is-main.js"
+
 export type McpConfig = {
   mcpServers: Record<string, { command: string; args: string[]; env: Record<string, string> }>
 }
@@ -55,4 +57,4 @@ function main(): void {
   }
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) main()
+if (isMain(import.meta.url)) main()

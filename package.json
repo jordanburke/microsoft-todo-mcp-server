@@ -17,7 +17,7 @@
     "build": "ts-builds build",
     "build:watch": "ts-builds build:watch",
     "dev": "ts-builds build && node dist/cli.js",
-    "start": "node dist/todo-index.js",
+    "start": "node dist/cli.js",
     "cli": "node dist/cli.js",
     "auth": "node dist/auth-server.js",
     "setup": "node dist/setup.js",
@@ -30,7 +30,7 @@
     "test": "ts-builds test",
     "test:watch": "ts-builds test:watch",
     "prepublishOnly": "pnpm validate && pnpm check:server-json",
-    "postinstall": "echo 'To sign in, run: npx -p microsoft-todo-mcp-server mstodo-setup'",
+    "postinstall": "echo 'To sign in, follow the Usage steps: https://github.com/jordanburke/microsoft-todo-mcp-server#usage'",
     "sync:server-json": "node scripts/sync-server-json.mjs",
     "check:server-json": "node scripts/sync-server-json.mjs --check",
     "version": "node scripts/sync-server-json.mjs && git add server.json"

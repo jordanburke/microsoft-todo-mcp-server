@@ -647,9 +647,7 @@ server.addTool({
     orderby: z
       .string()
       .optional()
-      .describe(
-        "OData $orderby, e.g. 'createdDateTime desc'. Graph rejects 'title' on To Do tasks.",
-      ),
+      .describe("OData $orderby, e.g. 'createdDateTime desc'. Graph rejects 'title' on To Do tasks."),
     top: z.number().optional().describe("Maximum number of tasks to retrieve"),
     skip: z.number().optional().describe("Number of tasks to skip"),
     count: z
@@ -1514,12 +1512,4 @@ export async function startServer(): Promise<void> {
     console.error("Error starting server:", error)
     throw error
   }
-}
-
-// Main entry point when executed directly
-if (import.meta.url === `file://${process.argv[1]}`) {
-  startServer().catch((error) => {
-    console.error("Fatal error in main():", error)
-    process.exit(1)
-  })
 }

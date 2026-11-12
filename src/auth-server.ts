@@ -354,7 +354,7 @@ app.get("/callback", async (req: Request, res: Response) => {
           body { font-family: Arial, sans-serif; margin: 40px; line-height: 1.6; }
           .container { max-width: 800px; margin: 0 auto; }
           .success { background-color: #d4edda; border: 1px solid #c3e6cb; padding: 15px; border-radius: 4px; margin-bottom: 20px; }
-            .token-details { background-color: #f8f9fa; padding: 15px; border-radius: 4px; margin-top: 20px; }
+          .token-details { background-color: #f8f9fa; padding: 15px; border-radius: 4px; margin-top: 20px; }
           .debug-info { margin-top: 30px; border-top: 1px solid #dee2e6; padding-top: 20px; }
         </style>
       </head>
@@ -364,8 +364,7 @@ app.get("/callback", async (req: Request, res: Response) => {
             <h1>Authentication Successful!</h1>
             <p>You can now close this window and use the Microsoft Todo MCP service.</p>
           </div>
-          
-          
+
           <div class="token-details">
             <h3>Token Details:</h3>
             <ul>
