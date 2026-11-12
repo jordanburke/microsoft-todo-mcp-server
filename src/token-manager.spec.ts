@@ -321,14 +321,29 @@ describe("token file", () => {
     expect(await new TokenManager().getTokens()).toBeNull()
   })
 
-  it("KNOWN ISSUE: two callers that find the token expired at once both renew it", async () => {
+  it("renews once when two callers find the token expired at the same moment", async () => {
     writeTokenFile({ accessToken: "stale", refreshToken: "r", expiresAt: 0 })
     const fetchMock = stubRefresh("renewed")
     const manager = new TokenManager()
 
-    await Promise.all([manager.getTokens(), manager.getTokens()])
+    const [first, second] = await Promise.all([manager.getTokens(), manager.getTokens()])
 
-    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(fetchMock).toHaveBeenCalledOnce()
+    expect([first?.accessToken, second?.accessToken]).toEqual(["renewed", "renewed"])
+  })
+
+  it("starts a fresh renewal once the previous one has finished", async () => {
+    writeTokenFile({ accessToken: "stale", refreshToken: "r", expiresAt: 0 })
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => Response.json({ error: "invalid_grant" }, { status: 400 })),
+    )
+    const manager = new TokenManager()
+
+    await manager.getTokens()
+    await manager.getTokens()
+
+    expect(vi.mocked(fetch)).toHaveBeenCalledTimes(2)
   })
 })
 

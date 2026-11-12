@@ -50,6 +50,9 @@ export class TokenManager {
   private tokenFilePath: string
   private currentTokens: Option<StoredTokenData> = None()
   private envTokens: Option<TokenData> = None()
+  // A renewal under way, keyed by the refresh token it spends. Entra rotates the refresh
+  // token on use, so a second concurrent renewal with the same one would race the first.
+  private inFlight: Option<{ refreshToken: string; renewal: Promise<TokenData | null> }> = None()
 
   constructor() {
     this.tokenFilePath = TokenManager.resolveTokenFilePath()
@@ -141,7 +144,19 @@ export class TokenManager {
     return this.refreshToken(live.refreshToken)
   }
 
+  /** Renew with `refreshToken`, joining a renewal already under way for the same token. */
   async refreshToken(refreshToken: string): Promise<TokenData | null> {
+    const pending = this.inFlight.filter((f) => f.refreshToken === refreshToken)
+    if (pending.isSome()) return pending.value.renewal
+
+    const renewal = this.renew(refreshToken).finally(() => {
+      this.inFlight = None()
+    })
+    this.inFlight = Some({ refreshToken, renewal })
+    return renewal
+  }
+
+  private async renew(refreshToken: string): Promise<TokenData | null> {
     // Client credentials come from the stored tokens, then the environment
     const stored = this.currentTokens.orUndefined()
     const clientId = stored?.clientId || process.env.CLIENT_ID
