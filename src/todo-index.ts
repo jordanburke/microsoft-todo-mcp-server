@@ -1,10 +1,19 @@
 import dotenv from "dotenv"
-import { existsSync, readFileSync, writeFileSync } from "fs"
+import { readFileSync } from "fs"
+import { IO, None, Option } from "functype"
 import { dirname, join } from "path"
 import { createServer } from "somamcp/node"
 import { fileURLToPath } from "url"
 import { z } from "zod"
 
+import {
+  graphErrorText,
+  graphGetOnce,
+  graphRequest,
+  graphRequestAll,
+  MS_GRAPH_BASE,
+  runOrNull,
+} from "./graph-client.js"
 import { tokenManager } from "./token-manager.js"
 
 // Load environment variables
@@ -12,10 +21,6 @@ dotenv.config()
 
 // Log the current working directory
 console.error("Current working directory:", process.cwd())
-
-// Microsoft Graph API endpoints
-const MS_GRAPH_BASE = "https://graph.microsoft.com/v1.0"
-const USER_AGENT = "microsoft-todo-mcp-server/1.0"
 
 // The published version, read from package.json (one level up from dist/ and src/), so
 // serverInfo reports what is installed.
@@ -30,174 +35,52 @@ export const server = createServer({
   version: PACKAGE_VERSION,
 })
 
-// Helper function for making Microsoft Graph API requests
-// Text of the last Graph failure, so a caller can report why a request failed
-// instead of an opaque "failed to retrieve".
-let lastGraphError: string | null = null
+type ToolReply = { content: Array<{ type: "text"; text: string }> }
+const reply = (text: string): ToolReply => ({ content: [{ type: "text", text }] })
+const NOT_AUTHENTICATED = "Failed to authenticate with Microsoft API"
 
-async function makeGraphRequest<T>(url: string, token: string, method = "GET", body?: any): Promise<T | null> {
-  const headers = {
-    "User-Agent": USER_AGENT,
-    Accept: "application/json",
-    Authorization: `Bearer ${token}`,
-    "Content-Type": "application/json",
-  }
-
-  try {
-    const options: RequestInit = {
-      method,
-      headers,
-    }
-
-    if (body && (method === "POST" || method === "PATCH")) {
-      options.body = JSON.stringify(body)
-    }
-
-    console.error(`Making request to: ${url}`)
-    console.error(
-      `Request options: ${JSON.stringify({
-        method,
-        headers: {
-          ...headers,
-          Authorization: "Bearer [REDACTED]",
-        },
-      })}`,
-    )
-
-    lastGraphError = null
-    let response = await fetch(url, options)
-
-    // If we get a 401, refresh the token and retry once
-    if (response.status === 401) {
-      console.error("Got 401, attempting token refresh...")
-      const newToken = (await tokenManager.refreshRejectedToken(token))?.accessToken
-      if (newToken && newToken !== token) {
-        // Retry with new token
-        headers.Authorization = `Bearer ${newToken}`
-        response = await fetch(url, { ...options, headers })
-      }
-    }
-
-    if (!response.ok) {
-      const errorText = await response.text()
-      console.error(`HTTP error! status: ${response.status}, body: ${errorText}`)
-
-      // Check for the specific MailboxNotEnabledForRESTAPI error
-      if (errorText.includes("MailboxNotEnabledForRESTAPI")) {
-        console.error(`
-=================================================================
-ERROR: MailboxNotEnabledForRESTAPI
-
-The Microsoft To Do API is not available for personal Microsoft accounts 
-(outlook.com, hotmail.com, live.com, etc.) through the Graph API.
-
-This is a limitation of the Microsoft Graph API, not an authentication issue.
-Microsoft only allows To Do API access for Microsoft 365 business accounts.
-
-You can still use Microsoft To Do through the web interface or mobile apps,
-but API access is restricted for personal accounts.
-=================================================================
-        `)
-
-        throw new Error(
-          "Microsoft To Do API is not available for personal Microsoft accounts. See console for details.",
-        )
-      }
-
-      throw new Error(`HTTP error! status: ${response.status}, body: ${errorText}`)
-    }
-
-    const data = await response.json()
-    console.error(`Response received: ${JSON.stringify(data).substring(0, 200)}...`)
-    return data as T
-  } catch (error) {
-    console.error("Error making Graph API request:", error)
-    lastGraphError = error instanceof Error ? error.message : String(error)
-    return null
-  }
+// The access token, or None when there is none to be had (logged, not thrown).
+async function getAccessToken(): Promise<Option<string>> {
+  console.error("getAccessToken called")
+  return (
+    await IO.async(() => tokenManager.getTokens())
+      .map((tokens) => Option(tokens).map((t) => t.accessToken))
+      .run()
+  ).fold(
+    (error) => {
+      console.error("Error getting access token:", error)
+      return None<string>()
+    },
+    (token) => {
+      console.error(token.isSome() ? "Successfully retrieved valid token" : "No valid tokens available")
+      return token
+    },
+  )
 }
 
-// Graph paginates collections on its own terms and signals more pages with
-// @odata.nextLink; a large $top does not suppress that. Reading response.value once
-// therefore drops everything past the first page. This follows the links to the end,
-// or until `limit` items are collected. A failed page fails the whole call, so callers
-// never get a silently truncated list.
-async function makeGraphRequestAll<T>(url: string, token: string, limit?: number): Promise<T[] | null> {
-  const items: T[] = []
-  let next: string | undefined = url
-  let pages = 0
+const PERSONAL_DOMAINS = ["outlook.com", "hotmail.com", "live.com", "msn.com", "passport.com"]
 
-  while (next) {
-    const page: { value: T[]; "@odata.nextLink"?: string } | null = await makeGraphRequest<{
-      value: T[]
-      "@odata.nextLink"?: string
-    }>(next, token)
-    if (!page) return null
-    items.push(...(page.value || []))
-    if (limit !== undefined && items.length >= limit) return items.slice(0, limit)
-    next = page["@odata.nextLink"]
-    pages++
-    if (pages >= 100 && next) {
-      lastGraphError = "stopped after 100 pages without reaching the end of the collection"
-      console.error(`makeGraphRequestAll: ${lastGraphError}`)
-      return null
-    }
-  }
-
-  return items
+// The signed-in account's address, or None if it cannot be read. A single request with no
+// 401 retry: this only decides whether to show a warning.
+async function accountEmail(): Promise<Option<string>> {
+  const token = (await getAccessToken()).orNull()
+  if (token === null) return None()
+  return (await graphGetOnce<{ mail?: string; userPrincipalName?: string }>(`${MS_GRAPH_BASE}/me`, token).run()).fold(
+    (error) => {
+      console.error(`Error getting user info: ${graphErrorText(error)}`)
+      return None<string>()
+    },
+    (user) => Option(user.mail || user.userPrincipalName),
+  )
 }
 
-// Authentication helper using delegated flow with token manager
-async function getAccessToken(): Promise<string | null> {
-  try {
-    console.error("getAccessToken called")
-
-    // Use the token manager to get tokens (handles all sources and refresh)
-    const tokens = await tokenManager.getTokens()
-
-    if (tokens) {
-      console.error(`Successfully retrieved valid token`)
-      return tokens.accessToken
-    }
-
-    console.error("No valid tokens available")
-    return null
-  } catch (error) {
-    console.error("Error getting access token:", error)
-    return null
-  }
-}
-
-// Function to check if the account is a personal Microsoft account
+// Whether the account looks personal (outlook.com and the like), logging a warning if so.
 async function isPersonalMicrosoftAccount(): Promise<boolean> {
-  try {
-    const token = await getAccessToken()
-    if (!token) return false
+  const email = (await accountEmail()).orElse("")
+  const domain = email.split("@")[1]?.toLowerCase()
 
-    // Make a request to get user info
-    const url = `${MS_GRAPH_BASE}/me`
-    const response = await fetch(url, {
-      method: "GET",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        Accept: "application/json",
-      },
-    })
-
-    if (!response.ok) {
-      console.error(`Error getting user info: ${response.status}`)
-      return false
-    }
-
-    const userData = await response.json()
-    const email = userData.mail || userData.userPrincipalName || ""
-
-    // Check if the email domain indicates a personal account
-    const personalDomains = ["outlook.com", "hotmail.com", "live.com", "msn.com", "passport.com"]
-    const domain = email.split("@")[1]?.toLowerCase()
-
-    if (domain && personalDomains.some((d) => domain.includes(d))) {
-      console.error(`
+  if (domain && PERSONAL_DOMAINS.some((d) => domain.includes(d))) {
+    console.error(`
 =================================================================
 WARNING: Personal Microsoft Account Detected
 
@@ -212,15 +95,11 @@ not an issue with your authentication or this application.
 You can still use Microsoft To Do through the web interface or mobile apps,
 but API access is restricted for personal accounts.
 =================================================================
-      `)
-      return true
-    }
-
-    return false
-  } catch (error) {
-    console.error("Error checking account type:", error)
-    return false
+    `)
+    return true
   }
+
+  return false
 }
 
 // Server tool to check authentication status
@@ -233,14 +112,9 @@ server.addTool({
     const tokens = await tokenManager.getTokens()
 
     if (!tokens) {
-      return {
-        content: [
-          {
-            type: "text",
-            text: "Not authenticated. Please run 'mstodo-setup' (or 'npx -p microsoft-todo-mcp-server mstodo-setup') to authenticate with Microsoft.",
-          },
-        ],
-      }
+      return reply(
+        "Not authenticated. Please run 'mstodo-setup' (or 'npx -p microsoft-todo-mcp-server mstodo-setup') to authenticate with Microsoft.",
+      )
     }
 
     const isExpired = Date.now() > tokens.expiresAt
@@ -259,23 +133,11 @@ server.addTool({
     }
 
     if (isExpired) {
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Authentication expired at ${expiryTime}. Will attempt to refresh when you call any API.${accountMessage}`,
-          },
-        ],
-      }
+      return reply(
+        `Authentication expired at ${expiryTime}. Will attempt to refresh when you call any API.${accountMessage}`,
+      )
     } else {
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Authenticated. Token expires at ${expiryTime}.${accountMessage}`,
-          },
-        ],
-      }
+      return reply(`Authenticated. Token expires at ${expiryTime}.${accountMessage}`)
     }
   },
 })
@@ -496,42 +358,15 @@ server.addTool({
   parameters: z.object({}),
   execute: async () => {
     try {
-      const token = await getAccessToken()
-      if (!token) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: "Failed to authenticate with Microsoft API",
-            },
-          ],
-        }
-      }
+      const token = (await getAccessToken()).orNull()
+      if (token === null) return reply(NOT_AUTHENTICATED)
 
-      const fetchedLists = await makeGraphRequestAll<TaskList>(`${MS_GRAPH_BASE}/me/todo/lists`, token)
-      const response = fetchedLists ? { value: fetchedLists } : null
+      const fetched = await graphRequestAll<TaskList>(`${MS_GRAPH_BASE}/me/todo/lists`, token).run()
+      if (fetched.isLeft()) return reply("Failed to retrieve task lists")
 
-      if (!response) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: "Failed to retrieve task lists",
-            },
-          ],
-        }
-      }
-
-      const lists = response.value || []
+      const lists = fetched.value
       if (lists.length === 0) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: "No task lists found.",
-            },
-          ],
-        }
+        return reply("No task lists found.")
       }
 
       const formattedLists = lists.map((list) => {
@@ -554,23 +389,9 @@ server.addTool({
         return `ID: ${list.id}\nName: ${list.displayName}${wellKnownInfo}${sharingInfo}\n---`
       })
 
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Your task lists:\n\n${formattedLists.join("\n")}`,
-          },
-        ],
-      }
+      return reply(`Your task lists:\n\n${formattedLists.join("\n")}`)
     } catch (error) {
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Error fetching task lists: ${error}`,
-          },
-        ],
-      }
+      return reply(`Error fetching task lists: ${error}`)
     }
   },
 })
@@ -589,42 +410,15 @@ server.addTool({
   }),
   execute: async ({ includeIds, groupBy }) => {
     try {
-      const token = await getAccessToken()
-      if (!token) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: "Failed to authenticate with Microsoft API",
-            },
-          ],
-        }
-      }
+      const token = (await getAccessToken()).orNull()
+      if (token === null) return reply(NOT_AUTHENTICATED)
 
-      const fetchedLists = await makeGraphRequestAll<TaskList>(`${MS_GRAPH_BASE}/me/todo/lists`, token)
-      const response = fetchedLists ? { value: fetchedLists } : null
+      const fetched = await graphRequestAll<TaskList>(`${MS_GRAPH_BASE}/me/todo/lists`, token).run()
+      if (fetched.isLeft()) return reply("Failed to retrieve task lists")
 
-      if (!response) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: "Failed to retrieve task lists",
-            },
-          ],
-        }
-      }
-
-      const lists = response.value || []
+      const lists = fetched.value
       if (lists.length === 0) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: "No task lists found.",
-            },
-          ],
-        }
+        return reply("No task lists found.")
       }
 
       // Group by shared status
@@ -646,7 +440,7 @@ server.addTool({
           output += `   ├─ ${list.displayName}\n`
         })
 
-        return { content: [{ type: "text", text: output }] }
+        return reply(output)
       }
 
       // Helper function to organize lists
@@ -818,16 +612,9 @@ server.addTool({
         })
       }
 
-      return { content: [{ type: "text", text: output }] }
+      return reply(output)
     } catch (error) {
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Error fetching organized task lists: ${error}`,
-          },
-        ],
-      }
+      return reply(`Error fetching organized task lists: ${error}`)
     }
   },
 })
@@ -841,54 +628,17 @@ server.addTool({
   }),
   execute: async ({ displayName }) => {
     try {
-      const token = await getAccessToken()
-      if (!token) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: "Failed to authenticate with Microsoft API",
-            },
-          ],
-        }
-      }
+      const token = (await getAccessToken()).orNull()
+      if (token === null) return reply(NOT_AUTHENTICATED)
 
-      // Prepare the request body
-      const requestBody = {
-        displayName,
-      }
-
-      // Make the API request to create the task list
-      const response = await makeGraphRequest<TaskList>(`${MS_GRAPH_BASE}/me/todo/lists`, token, "POST", requestBody)
-
-      if (!response) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Failed to create task list: ${displayName}`,
-            },
-          ],
-        }
-      }
-
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Task list created successfully!\nName: ${response.displayName}\nID: ${response.id}`,
-          },
-        ],
-      }
+      return (
+        await graphRequest<TaskList>(`${MS_GRAPH_BASE}/me/todo/lists`, token, "POST", { displayName }).run()
+      ).fold(
+        () => reply(`Failed to create task list: ${displayName}`),
+        (list) => reply(`Task list created successfully!\nName: ${list.displayName}\nID: ${list.id}`),
+      )
     } catch (error) {
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Error creating task list: ${error}`,
-          },
-        ],
-      }
+      return reply(`Error creating task list: ${error}`)
     }
   },
 })
@@ -902,59 +652,17 @@ server.addTool({
   }),
   execute: async ({ listId, displayName }) => {
     try {
-      const token = await getAccessToken()
-      if (!token) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: "Failed to authenticate with Microsoft API",
-            },
-          ],
-        }
-      }
+      const token = (await getAccessToken()).orNull()
+      if (token === null) return reply(NOT_AUTHENTICATED)
 
-      // Prepare the request body
-      const requestBody = {
-        displayName,
-      }
-
-      // Make the API request to update the task list
-      const response = await makeGraphRequest<TaskList>(
-        `${MS_GRAPH_BASE}/me/todo/lists/${listId}`,
-        token,
-        "PATCH",
-        requestBody,
+      return (
+        await graphRequest<TaskList>(`${MS_GRAPH_BASE}/me/todo/lists/${listId}`, token, "PATCH", { displayName }).run()
+      ).fold(
+        () => reply(`Failed to update task list with ID: ${listId}`),
+        (list) => reply(`Task list updated successfully!\nNew name: ${list.displayName}`),
       )
-
-      if (!response) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Failed to update task list with ID: ${listId}`,
-            },
-          ],
-        }
-      }
-
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Task list updated successfully!\nNew name: ${response.displayName}`,
-          },
-        ],
-      }
     } catch (error) {
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Error updating task list: ${error}`,
-          },
-        ],
-      }
+      return reply(`Error updating task list: ${error}`)
     }
   },
 })
@@ -968,43 +676,18 @@ server.addTool({
   }),
   execute: async ({ listId }) => {
     try {
-      const token = await getAccessToken()
-      if (!token) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: "Failed to authenticate with Microsoft API",
-            },
-          ],
-        }
-      }
+      const token = (await getAccessToken()).orNull()
+      if (token === null) return reply(NOT_AUTHENTICATED)
 
       // Make a DELETE request to the Microsoft Graph API
       const url = `${MS_GRAPH_BASE}/me/todo/lists/${listId}`
       console.error(`Deleting task list: ${url}`)
 
-      // The DELETE method doesn't return a response body, so we expect null
-      await makeGraphRequest<null>(url, token, "DELETE")
-
-      // If we get here, the delete was successful (204 No Content)
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Task list with ID: ${listId} was successfully deleted.`,
-          },
-        ],
-      }
+      // KNOWN ISSUE: the outcome is not checked, so a refused delete also reports success.
+      await runOrNull(graphRequest<void>(url, token, "DELETE"))
+      return reply(`Task list with ID: ${listId} was successfully deleted.`)
     } catch (error) {
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Error deleting task list: ${error}`,
-          },
-        ],
-      }
+      return reply(`Error deleting task list: ${error}`)
     }
   },
 })
@@ -1029,17 +712,8 @@ server.addTool({
   }),
   execute: async ({ listId, filter, select, orderby, top, skip, count }) => {
     try {
-      const token = await getAccessToken()
-      if (!token) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: "Failed to authenticate with Microsoft API",
-            },
-          ],
-        }
-      }
+      const token = (await getAccessToken()).orNull()
+      if (token === null) return reply(NOT_AUTHENTICATED)
 
       // Build the query parameters
       const queryParams = new URLSearchParams()
@@ -1059,33 +733,14 @@ server.addTool({
       const queryString = queryParams.toString()
       const url = `${MS_GRAPH_BASE}/me/todo/lists/${listId}/tasks${queryString ? "?" + queryString : ""}`
 
-      console.error(`Making request to: ${url}`)
-
-      const allTasks = await makeGraphRequestAll<Task>(url, token, top)
-
-      if (!allTasks) {
-        return {
-          content: [
-            {
-              type: "text",
-              text:
-                `Failed to retrieve tasks for list: ${listId}` +
-                (lastGraphError ? ` | Graph said: ${lastGraphError}` : ""),
-            },
-          ],
-        }
+      const fetched = await graphRequestAll<Task>(url, token, top).run()
+      if (fetched.isLeft()) {
+        return reply(`Failed to retrieve tasks for list: ${listId} | Graph said: ${graphErrorText(fetched.value)}`)
       }
 
-      const tasks = allTasks
+      const tasks = fetched.value
       if (tasks.length === 0) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: `No tasks found in list with ID: ${listId}`,
-            },
-          ],
-        }
+        return reply(`No tasks found in list with ID: ${listId}`)
       }
 
       // Client-side stand-in for $select (see above). No list means everything. ID and Title
@@ -1151,23 +806,9 @@ server.addTool({
         countInfo = `Total count: ${tasks.length}\n\n`
       }
 
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Tasks in list ${listId}:\n\n${countInfo}${formattedTasks.join("\n")}`,
-          },
-        ],
-      }
+      return reply(`Tasks in list ${listId}:\n\n${countInfo}${formattedTasks.join("\n")}`)
     } catch (error) {
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Error fetching tasks: ${error}`,
-          },
-        ],
-      }
+      return reply(`Error fetching tasks: ${error}`)
     }
   },
 })
@@ -1210,17 +851,8 @@ server.addTool({
     recurrence,
   }) => {
     try {
-      const token = await getAccessToken()
-      if (!token) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: "Failed to authenticate with Microsoft API",
-            },
-          ],
-        }
-      }
+      const token = (await getAccessToken()).orNull()
+      if (token === null) return reply(NOT_AUTHENTICATED)
 
       // Construct the task body with all supported properties
       const taskBody: any = { title }
@@ -1273,58 +905,27 @@ server.addTool({
       if (recurrence) {
         const problem = recurrenceProblem(recurrence)
         if (problem) {
-          return { content: [{ type: "text", text: `Recurrence not set: ${problem}` }] }
+          return reply(`Recurrence not set: ${problem}`)
         }
         if (!dueDateTime) {
-          return {
-            content: [
-              {
-                type: "text",
-                text: "Cannot create a recurring task without a dueDateTime — Microsoft Graph derives the first occurrence from the due date.",
-              },
-            ],
-          }
+          return reply(
+            "Cannot create a recurring task without a dueDateTime — Microsoft Graph derives the first occurrence from the due date.",
+          )
         }
         taskBody.recurrence = toGraphRecurrence(recurrence, dueDateTime)
       }
 
-      const response = await makeGraphRequest<Task>(
-        `${MS_GRAPH_BASE}/me/todo/lists/${listId}/tasks`,
-        token,
-        "POST",
-        taskBody,
+      return (
+        await graphRequest<Task>(`${MS_GRAPH_BASE}/me/todo/lists/${listId}/tasks`, token, "POST", taskBody).run()
+      ).fold(
+        (error) => reply(`Failed to create task in list: ${listId}: ${graphErrorText(error)}`),
+        (created) => {
+          const recurrenceInfo = created.recurrence ? `\nRepeats: ${formatRecurrence(created.recurrence)}` : ""
+          return reply(`Task created successfully!\nID: ${created.id}\nTitle: ${created.title}${recurrenceInfo}`)
+        },
       )
-
-      if (!response) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Failed to create task in list: ${listId}: ${lastGraphError ?? "unknown error"}`,
-            },
-          ],
-        }
-      }
-
-      const recurrenceInfo = response.recurrence ? `\nRepeats: ${formatRecurrence(response.recurrence)}` : ""
-
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Task created successfully!\nID: ${response.id}\nTitle: ${response.title}${recurrenceInfo}`,
-          },
-        ],
-      }
     } catch (error) {
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Error creating task: ${error}`,
-          },
-        ],
-      }
+      return reply(`Error creating task: ${error}`)
     }
   },
 })
@@ -1370,17 +971,8 @@ server.addTool({
     recurrence,
   }) => {
     try {
-      const token = await getAccessToken()
-      if (!token) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: "Failed to authenticate with Microsoft API",
-            },
-          ],
-        }
-      }
+      const token = (await getAccessToken()).orNull()
+      if (token === null) return reply(NOT_AUTHENTICATED)
 
       // Construct the task update body with all provided properties
       const taskBody: any = {}
@@ -1456,7 +1048,7 @@ server.addTool({
         } else {
           const problem = recurrenceProblem(recurrence)
           if (problem) {
-            return { content: [{ type: "text", text: `Recurrence not set: ${problem}` }] }
+            return reply(`Recurrence not set: ${problem}`)
           }
           // Graph derives the first occurrence from the due date, and range.startDate
           // defaults to it. Use the due date this call sets, or else the one the task
@@ -1465,31 +1057,19 @@ server.addTool({
           if (dueDateTime !== undefined) {
             dueISO = dueDateTime || undefined
           } else {
-            const existing = await makeGraphRequest<Task>(
+            const existing = await graphRequest<Task>(
               `${MS_GRAPH_BASE}/me/todo/lists/${listId}/tasks/${taskId}`,
               token,
-            )
-            if (!existing) {
-              return {
-                content: [
-                  {
-                    type: "text",
-                    text: `Failed to read the task's current due date: ${lastGraphError ?? "unknown error"}`,
-                  },
-                ],
-              }
+            ).run()
+            if (existing.isLeft()) {
+              return reply(`Failed to read the task's current due date: ${graphErrorText(existing.value)}`)
             }
-            dueISO = existing.dueDateTime?.dateTime
+            dueISO = existing.value.dueDateTime?.dateTime
           }
           if (!dueISO) {
-            return {
-              content: [
-                {
-                  type: "text",
-                  text: "Cannot set recurrence without a dueDateTime — pass dueDateTime in this update or set one on the task first.",
-                },
-              ],
-            }
+            return reply(
+              "Cannot set recurrence without a dueDateTime — pass dueDateTime in this update or set one on the task first.",
+            )
           }
           taskBody.recurrence = toGraphRecurrence(recurrence, dueISO)
         }
@@ -1497,51 +1077,22 @@ server.addTool({
 
       // Make sure we have at least one property to update
       if (Object.keys(taskBody).length === 0) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: "No properties provided for update. Please specify at least one property to change.",
-            },
-          ],
-        }
+        return reply("No properties provided for update. Please specify at least one property to change.")
       }
 
-      const response = await makeGraphRequest<Task>(
-        `${MS_GRAPH_BASE}/me/todo/lists/${listId}/tasks/${taskId}`,
-        token,
-        "PATCH",
-        taskBody,
+      return (
+        await graphRequest<Task>(
+          `${MS_GRAPH_BASE}/me/todo/lists/${listId}/tasks/${taskId}`,
+          token,
+          "PATCH",
+          taskBody,
+        ).run()
+      ).fold(
+        (error) => reply(`Failed to update task with ID: ${taskId} in list: ${listId}: ${graphErrorText(error)}`),
+        (updated) => reply(`Task updated successfully!\nID: ${updated.id}\nTitle: ${updated.title}`),
       )
-
-      if (!response) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Failed to update task with ID: ${taskId} in list: ${listId}: ${lastGraphError ?? "unknown error"}`,
-            },
-          ],
-        }
-      }
-
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Task updated successfully!\nID: ${response.id}\nTitle: ${response.title}`,
-          },
-        ],
-      }
     } catch (error) {
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Error updating task: ${error}`,
-          },
-        ],
-      }
+      return reply(`Error updating task: ${error}`)
     }
   },
 })
@@ -1556,43 +1107,18 @@ server.addTool({
   }),
   execute: async ({ listId, taskId }) => {
     try {
-      const token = await getAccessToken()
-      if (!token) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: "Failed to authenticate with Microsoft API",
-            },
-          ],
-        }
-      }
+      const token = (await getAccessToken()).orNull()
+      if (token === null) return reply(NOT_AUTHENTICATED)
 
       // Make a DELETE request to the Microsoft Graph API
       const url = `${MS_GRAPH_BASE}/me/todo/lists/${listId}/tasks/${taskId}`
       console.error(`Deleting task: ${url}`)
 
-      // The DELETE method doesn't return a response body, so we expect null
-      await makeGraphRequest<null>(url, token, "DELETE")
-
-      // If we get here, the delete was successful (204 No Content)
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Task with ID: ${taskId} was successfully deleted from list: ${listId}`,
-          },
-        ],
-      }
+      // KNOWN ISSUE: the outcome is not checked, so a refused delete also reports success.
+      await runOrNull(graphRequest<void>(url, token, "DELETE"))
+      return reply(`Task with ID: ${taskId} was successfully deleted from list: ${listId}`)
     } catch (error) {
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Error deleting task: ${error}`,
-          },
-        ],
-      }
+      return reply(`Error deleting task: ${error}`)
     }
   },
 })
@@ -1607,54 +1133,26 @@ server.addTool({
   }),
   execute: async ({ listId, taskId }) => {
     try {
-      const token = await getAccessToken()
-      if (!token) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: "Failed to authenticate with Microsoft API",
-            },
-          ],
-        }
-      }
+      const token = (await getAccessToken()).orNull()
+      if (token === null) return reply(NOT_AUTHENTICATED)
 
       // Fetch the task first to get its title
-      const taskResponse = await makeGraphRequest<Task>(
-        `${MS_GRAPH_BASE}/me/todo/lists/${listId}/tasks/${taskId}`,
-        token,
+      const taskTitle = Option(
+        await runOrNull(graphRequest<Task>(`${MS_GRAPH_BASE}/me/todo/lists/${listId}/tasks/${taskId}`, token)),
       )
-
-      const taskTitle = taskResponse ? taskResponse.title : "Unknown Task"
+        .map((task) => task.title)
+        .orElse("Unknown Task")
 
       // Fetch the checklist items
-      const checklistItems = await makeGraphRequestAll<ChecklistItem>(
+      const fetched = await graphRequestAll<ChecklistItem>(
         `${MS_GRAPH_BASE}/me/todo/lists/${listId}/tasks/${taskId}/checklistItems`,
         token,
-      )
-      const response = checklistItems ? { value: checklistItems } : null
+      ).run()
+      if (fetched.isLeft()) return reply(`Failed to retrieve checklist items for task: ${taskId}`)
 
-      if (!response) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Failed to retrieve checklist items for task: ${taskId}`,
-            },
-          ],
-        }
-      }
-
-      const items = response.value || []
+      const items = fetched.value
       if (items.length === 0) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: `No checklist items found for task "${taskTitle}" (ID: ${taskId})`,
-            },
-          ],
-        }
+        return reply(`No checklist items found for task "${taskTitle}" (ID: ${taskId})`)
       }
 
       const formattedItems = items.map((item) => {
@@ -1670,23 +1168,9 @@ server.addTool({
         return itemInfo
       })
 
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Checklist items for task "${taskTitle}" (ID: ${taskId}):\n\n${formattedItems.join("\n\n")}`,
-          },
-        ],
-      }
+      return reply(`Checklist items for task "${taskTitle}" (ID: ${taskId}):\n\n${formattedItems.join("\n\n")}`)
     } catch (error) {
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Error fetching checklist items: ${error}`,
-          },
-        ],
-      }
+      return reply(`Error fetching checklist items: ${error}`)
     }
   },
 })
@@ -1703,17 +1187,8 @@ server.addTool({
   }),
   execute: async ({ listId, taskId, displayName, isChecked }) => {
     try {
-      const token = await getAccessToken()
-      if (!token) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: "Failed to authenticate with Microsoft API",
-            },
-          ],
-        }
-      }
+      const token = (await getAccessToken()).orNull()
+      if (token === null) return reply(NOT_AUTHENTICATED)
 
       // Prepare the request body
       const requestBody: any = {
@@ -1724,42 +1199,19 @@ server.addTool({
         requestBody.isChecked = isChecked
       }
 
-      // Make the API request to create the checklist item
-      const response = await makeGraphRequest<ChecklistItem>(
-        `${MS_GRAPH_BASE}/me/todo/lists/${listId}/tasks/${taskId}/checklistItems`,
-        token,
-        "POST",
-        requestBody,
+      return (
+        await graphRequest<ChecklistItem>(
+          `${MS_GRAPH_BASE}/me/todo/lists/${listId}/tasks/${taskId}/checklistItems`,
+          token,
+          "POST",
+          requestBody,
+        ).run()
+      ).fold(
+        () => reply(`Failed to create checklist item for task: ${taskId}`),
+        (item) => reply(`Checklist item created successfully!\nContent: ${item.displayName}\nID: ${item.id}`),
       )
-
-      if (!response) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Failed to create checklist item for task: ${taskId}`,
-            },
-          ],
-        }
-      }
-
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Checklist item created successfully!\nContent: ${response.displayName}\nID: ${response.id}`,
-          },
-        ],
-      }
     } catch (error) {
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Error creating checklist item: ${error}`,
-          },
-        ],
-      }
+      return reply(`Error creating checklist item: ${error}`)
     }
   },
 })
@@ -1777,17 +1229,8 @@ server.addTool({
   }),
   execute: async ({ listId, taskId, checklistItemId, displayName, isChecked }) => {
     try {
-      const token = await getAccessToken()
-      if (!token) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: "Failed to authenticate with Microsoft API",
-            },
-          ],
-        }
-      }
+      const token = (await getAccessToken()).orNull()
+      if (token === null) return reply(NOT_AUTHENTICATED)
 
       // Prepare the update body, including only the fields that are provided
       const requestBody: any = {}
@@ -1802,54 +1245,25 @@ server.addTool({
 
       // Make sure we have at least one property to update
       if (Object.keys(requestBody).length === 0) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: "No properties provided for update. Please specify either displayName or isChecked.",
-            },
-          ],
-        }
+        return reply("No properties provided for update. Please specify either displayName or isChecked.")
       }
 
-      // Make the API request to update the checklist item
-      const response = await makeGraphRequest<ChecklistItem>(
-        `${MS_GRAPH_BASE}/me/todo/lists/${listId}/tasks/${taskId}/checklistItems/${checklistItemId}`,
-        token,
-        "PATCH",
-        requestBody,
+      return (
+        await graphRequest<ChecklistItem>(
+          `${MS_GRAPH_BASE}/me/todo/lists/${listId}/tasks/${taskId}/checklistItems/${checklistItemId}`,
+          token,
+          "PATCH",
+          requestBody,
+        ).run()
+      ).fold(
+        () => reply(`Failed to update checklist item with ID: ${checklistItemId}`),
+        (item) =>
+          reply(
+            `Checklist item updated successfully!\nContent: ${item.displayName}\nStatus: ${item.isChecked ? "Checked" : "Not checked"}`,
+          ),
       )
-
-      if (!response) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Failed to update checklist item with ID: ${checklistItemId}`,
-            },
-          ],
-        }
-      }
-
-      const statusText = response.isChecked ? "Checked" : "Not checked"
-
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Checklist item updated successfully!\nContent: ${response.displayName}\nStatus: ${statusText}`,
-          },
-        ],
-      }
     } catch (error) {
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Error updating checklist item: ${error}`,
-          },
-        ],
-      }
+      return reply(`Error updating checklist item: ${error}`)
     }
   },
 })
@@ -1865,43 +1279,18 @@ server.addTool({
   }),
   execute: async ({ listId, taskId, checklistItemId }) => {
     try {
-      const token = await getAccessToken()
-      if (!token) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: "Failed to authenticate with Microsoft API",
-            },
-          ],
-        }
-      }
+      const token = (await getAccessToken()).orNull()
+      if (token === null) return reply(NOT_AUTHENTICATED)
 
       // Make a DELETE request to the Microsoft Graph API
       const url = `${MS_GRAPH_BASE}/me/todo/lists/${listId}/tasks/${taskId}/checklistItems/${checklistItemId}`
       console.error(`Deleting checklist item: ${url}`)
 
-      // The DELETE method doesn't return a response body, so we expect null
-      await makeGraphRequest<null>(url, token, "DELETE")
-
-      // If we get here, the delete was successful (204 No Content)
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Checklist item with ID: ${checklistItemId} was successfully deleted from task: ${taskId}`,
-          },
-        ],
-      }
+      // KNOWN ISSUE: the outcome is not checked, so a refused delete also reports success.
+      await runOrNull(graphRequest<void>(url, token, "DELETE"))
+      return reply(`Checklist item with ID: ${checklistItemId} was successfully deleted from task: ${taskId}`)
     } catch (error) {
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Error deleting checklist item: ${error}`,
-          },
-        ],
-      }
+      return reply(`Error deleting checklist item: ${error}`)
     }
   },
 })
@@ -1927,56 +1316,29 @@ server.addTool({
   }),
   execute: async ({ sourceListId, targetListId, olderThanDays, dryRun }) => {
     try {
-      const token = await getAccessToken()
-      if (!token) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: "Failed to authenticate with Microsoft API",
-            },
-          ],
-        }
-      }
+      const token = (await getAccessToken()).orNull()
+      if (token === null) return reply(NOT_AUTHENTICATED)
 
       // Calculate cutoff date
       const cutoffDate = new Date()
       cutoffDate.setDate(cutoffDate.getDate() - olderThanDays)
 
       // Get all completed tasks from source list
-      const archivedTasks = await makeGraphRequestAll<Task>(
+      const completed = await graphRequestAll<Task>(
         `${MS_GRAPH_BASE}/me/todo/lists/${sourceListId}/tasks?$filter=status eq 'completed'`,
         token,
-      )
-      const tasksResponse = archivedTasks ? { value: archivedTasks } : null
-
-      if (!tasksResponse || !tasksResponse.value) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: "Failed to retrieve tasks from source list",
-            },
-          ],
-        }
-      }
+      ).run()
+      if (completed.isLeft()) return reply("Failed to retrieve tasks from source list")
 
       // Filter tasks older than cutoff
-      const tasksToArchive = tasksResponse.value.filter((task) => {
+      const tasksToArchive = completed.value.filter((task) => {
         if (!task.completedDateTime?.dateTime) return false
         const completedDate = new Date(task.completedDateTime.dateTime)
         return completedDate < cutoffDate
       })
 
       if (tasksToArchive.length === 0) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: `No completed tasks found older than ${olderThanDays} days.`,
-            },
-          ],
-        }
+        return reply(`No completed tasks found older than ${olderThanDays} days.`)
       }
 
       if (dryRun) {
@@ -1991,43 +1353,35 @@ server.addTool({
           preview += `- ${task.title} (completed: ${completedDate})\n`
         })
 
-        return { content: [{ type: "text", text: preview }] }
+        return reply(preview)
       }
 
-      // Actually archive the tasks
-      let successCount = 0
-      const failedTasks: string[] = []
-
-      for (const task of tasksToArchive) {
-        try {
-          // Create task in target list
-          const createResponse = await makeGraphRequest(
-            `${MS_GRAPH_BASE}/me/todo/lists/${targetListId}/tasks`,
-            token,
-            "POST",
-            {
-              title: task.title,
-              status: "completed",
-              body: task.body,
-              importance: task.importance,
-              completedDateTime: task.completedDateTime,
-              dueDateTime: task.dueDateTime,
-              reminderDateTime: task.reminderDateTime,
-              categories: task.categories,
-            },
+      // One task at a time: copy it to the target list, then delete it from the source.
+      // True when the copy was created. KNOWN ISSUE: the delete's outcome is not checked.
+      const archiveOne = (task: Task): IO<never, never, boolean> =>
+        graphRequest(`${MS_GRAPH_BASE}/me/todo/lists/${targetListId}/tasks`, token, "POST", {
+          title: task.title,
+          status: "completed",
+          body: task.body,
+          importance: task.importance,
+          completedDateTime: task.completedDateTime,
+          dueDateTime: task.dueDateTime,
+          reminderDateTime: task.reminderDateTime,
+          categories: task.categories,
+        })
+          .flatMap(() =>
+            IO.async(() =>
+              runOrNull(
+                graphRequest<void>(`${MS_GRAPH_BASE}/me/todo/lists/${sourceListId}/tasks/${task.id}`, token, "DELETE"),
+              ),
+            ),
           )
+          .map(() => true)
+          .recover(false)
 
-          if (createResponse) {
-            // Delete from source list
-            await makeGraphRequest(`${MS_GRAPH_BASE}/me/todo/lists/${sourceListId}/tasks/${task.id}`, token, "DELETE")
-            successCount++
-          } else {
-            failedTasks.push(task.title)
-          }
-        } catch (error) {
-          failedTasks.push(task.title)
-        }
-      }
+      const archived = (await IO.forEach(tasksToArchive, archiveOne).run()).orElse(tasksToArchive.map(() => false))
+      const successCount = archived.filter(Boolean).length
+      const failedTasks = tasksToArchive.filter((_, i) => !archived[i]).map((task) => task.title)
 
       let result = `📦 Archive Complete\n`
       result += `Successfully archived ${successCount} of ${tasksToArchive.length} tasks\n`
@@ -2040,16 +1394,9 @@ server.addTool({
         })
       }
 
-      return { content: [{ type: "text", text: result }] }
+      return reply(result)
     } catch (error) {
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Error archiving tasks: ${error}`,
-          },
-        ],
-      }
+      return reply(`Error archiving tasks: ${error}`)
     }
   },
 })
@@ -2064,17 +1411,8 @@ server.addTool({
   }),
   execute: async ({ testType }) => {
     try {
-      const token = await getAccessToken()
-      if (!token) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: "Failed to authenticate with Microsoft API",
-            },
-          ],
-        }
-      }
+      const token = (await getAccessToken()).orNull()
+      if (token === null) return reply(NOT_AUTHENTICATED)
 
       let results = "🔍 Graph API Exploration Results\n" + "=".repeat(50) + "\n\n"
 
@@ -2082,7 +1420,7 @@ server.addTool({
       if (testType === "odata-select" || testType === "all") {
         results += "📊 Test 1: Using $select=* to retrieve all properties\n"
         try {
-          const response = await makeGraphRequest<any>(`${MS_GRAPH_BASE}/me/todo/lists?$select=*`, token)
+          const response = await runOrNull(graphRequest<any>(`${MS_GRAPH_BASE}/me/todo/lists?$select=*`, token))
           if (response && response.value && response.value.length > 0) {
             const firstList = response.value[0]
             const properties = Object.keys(firstList)
@@ -2116,9 +1454,8 @@ server.addTool({
 
         for (const expand of expandOptions) {
           try {
-            const response = await makeGraphRequest<any>(
-              `${MS_GRAPH_BASE}/me/todo/lists?$expand=${expand}&$top=1`,
-              token,
+            const response = await runOrNull(
+              graphRequest<any>(`${MS_GRAPH_BASE}/me/todo/lists?$expand=${expand}&$top=1`, token),
             )
             if (response && response.value) {
               results += `✓ $expand=${expand}: Success - `
@@ -2140,6 +1477,7 @@ server.addTool({
       if (testType === "headers" || testType === "all") {
         results += "📊 Test 3: Checking response headers\n"
         try {
+          // A raw fetch on purpose: this test reports the response headers themselves.
           const response = await fetch(`${MS_GRAPH_BASE}/me/todo/lists`, {
             headers: {
               Authorization: `Bearer ${token}`,
@@ -2162,9 +1500,8 @@ server.addTool({
       if (testType === "extensions" || testType === "all") {
         results += "📊 Test 4: Checking for extensions\n"
         try {
-          const listsResponse = await makeGraphRequest<{ value: TaskList[] }>(
-            `${MS_GRAPH_BASE}/me/todo/lists?$top=1`,
-            token,
+          const listsResponse = await runOrNull(
+            graphRequest<{ value: TaskList[] }>(`${MS_GRAPH_BASE}/me/todo/lists?$top=1`, token),
           )
 
           if (listsResponse && listsResponse.value && listsResponse.value.length > 0) {
@@ -2172,9 +1509,8 @@ server.addTool({
 
             // Try to get extensions
             try {
-              const extResponse = await makeGraphRequest<any>(
-                `${MS_GRAPH_BASE}/me/todo/lists/${listId}/extensions`,
-                token,
+              const extResponse = await runOrNull(
+                graphRequest<any>(`${MS_GRAPH_BASE}/me/todo/lists/${listId}/extensions`, token),
               )
               results += `Extensions found: ${JSON.stringify(extResponse, null, 2)}\n`
             } catch (error: any) {
@@ -2200,7 +1536,7 @@ server.addTool({
 
         for (const endpoint of endpoints) {
           try {
-            const response = await makeGraphRequest<any>(`${MS_GRAPH_BASE}${endpoint}`, token)
+            const response = await runOrNull(graphRequest<any>(`${MS_GRAPH_BASE}${endpoint}`, token))
             results += `✓ ${endpoint}: Found! Response: ${JSON.stringify(response).substring(0, 200)}...\n`
           } catch (error: any) {
             results += `✗ ${endpoint}: Not found (${error.message || "Failed"})\n`
@@ -2211,23 +1547,9 @@ server.addTool({
       results += "\n" + "=".repeat(50) + "\n"
       results += "Analysis complete. Check results above for any discovered properties or endpoints."
 
-      return {
-        content: [
-          {
-            type: "text",
-            text: results,
-          },
-        ],
-      }
+      return reply(results)
     } catch (error) {
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Error during Graph API exploration: ${error}`,
-          },
-        ],
-      }
+      return reply(`Error during Graph API exploration: ${error}`)
     }
   },
 })

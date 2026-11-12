@@ -1,5 +1,6 @@
 // src/token-manager.ts
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs"
+import { Http, None, Option, Some, Try } from "functype"
 import { homedir } from "os"
 import { dirname, join, resolve } from "path"
 
@@ -15,33 +16,40 @@ interface StoredTokenData extends TokenData {
   tenantId?: string
 }
 
+type TokenResponse = { access_token: string; refresh_token?: string; expires_in: number }
+
+const FALLBACK_LIFETIME_MS = 3600 * 1000
+const REFRESH_BUFFER_MS = 5 * 60 * 1000
+const SCOPE = "offline_access Tasks.Read Tasks.ReadWrite Tasks.Read.Shared Tasks.ReadWrite.Shared User.Read"
+
 // Work and school accounts get a JWT access token, so the real expiry is in its `exp`
 // claim and does not have to be guessed. Personal accounts get an opaque token, where
 // the one-hour assumption is all there is — but the caller stamps it once instead of
 // on every call, which is what used to keep the refresh branch out of reach.
-const expiryFromAccessToken = (accessToken: string): number => {
-  const FALLBACK_LIFETIME_MS = 3600 * 1000
-  const REFRESH_BUFFER_MS = 5 * 60 * 1000
+const expiryFromAccessToken = (accessToken: string): number =>
+  Option(accessToken.split(".")[1])
+    .flatMap((payload) =>
+      Try(() => JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as { exp?: unknown }).toOption(),
+    )
+    .flatMap(({ exp }) => (typeof exp === "number" ? Some(exp * 1000 - REFRESH_BUFFER_MS) : None<number>()))
+    .orElse(Date.now() + FALLBACK_LIFETIME_MS)
 
-  try {
-    const payload = accessToken.split(".")[1]
-    if (!payload) return Date.now() + FALLBACK_LIFETIME_MS
-
-    const { exp } = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"))
-    if (typeof exp !== "number") return Date.now() + FALLBACK_LIFETIME_MS
-
-    return exp * 1000 - REFRESH_BUFFER_MS
-  } catch {
-    // An opaque token is not an error — fall back to the old assumption, but stamp it
-    // once (see readEnvTokens) rather than on every call.
-    return Date.now() + FALLBACK_LIFETIME_MS
-  }
-}
+// A token file's contents, or None when it is missing or unreadable.
+const readTokenFile = (path: string, label: string): Option<StoredTokenData> =>
+  existsSync(path)
+    ? Try(() => JSON.parse(readFileSync(path, "utf8")) as StoredTokenData | null).fold(
+        (error) => {
+          console.error(`Error reading ${label}:`, error)
+          return None<StoredTokenData>()
+        },
+        (tokens) => Option(tokens),
+      )
+    : None<StoredTokenData>()
 
 export class TokenManager {
   private tokenFilePath: string
-  private currentTokens: StoredTokenData | null = null
-  private envTokens: TokenData | null = null
+  private currentTokens: Option<StoredTokenData> = None()
+  private envTokens: Option<TokenData> = None()
 
   constructor() {
     this.tokenFilePath = TokenManager.resolveTokenFilePath()
@@ -68,79 +76,52 @@ export class TokenManager {
   // The environment pair is a bootstrap credential, not a live one: nothing rewrites
   // those variables when a token is renewed. Stamp its deadline once, when the value
   // is first seen, so the deadline stops moving with the clock.
-  private readEnvTokens(): TokenData | null {
+  private readEnvTokens(): Option<TokenData> {
     const accessToken = process.env.MS_TODO_ACCESS_TOKEN
     const refreshToken = process.env.MS_TODO_REFRESH_TOKEN
-    if (!accessToken || !refreshToken) return null
+    if (!accessToken || !refreshToken) return None()
 
-    if (!this.envTokens || this.envTokens.accessToken !== accessToken) {
-      this.envTokens = { accessToken, refreshToken, expiresAt: expiryFromAccessToken(accessToken) }
-    }
+    const seen = this.envTokens.filter((tokens) => tokens.accessToken === accessToken)
+    this.envTokens = seen.isSome()
+      ? seen
+      : Some({ accessToken, refreshToken, expiresAt: expiryFromAccessToken(accessToken) })
 
     return this.envTokens
   }
 
   // Try to get tokens from multiple sources
   async getTokens(): Promise<TokenData | null> {
-    // 1. Check environment variables first (for backward compatibility)
+    // 1. Environment variables first (for backward compatibility)
     const envTokens = this.readEnvTokens()
-    if (envTokens) {
+    if (envTokens.isSome()) {
       // Anything renewed in this process supersedes the environment pair. Nothing
       // rewrites those variables, so the original values stay frozen at whatever they
       // were at launch; preferring them would serve a stale access token forever and
       // would re-send a refresh token the identity provider has already rotated away.
-      const live = this.currentTokens ?? envTokens
-
-      if (Date.now() < live.expiresAt) {
-        return live
-      }
-
-      const refreshed = await this.refreshToken(live.refreshToken)
-      if (refreshed) {
-        return refreshed
-      }
+      const live: TokenData = this.currentTokens.orElse(envTokens.value)
+      if (Date.now() < live.expiresAt) return live
 
       // Hand back the expired token rather than nothing: the caller's 401 says more
       // about what went wrong than a bare "not authenticated".
-      return live
+      return (await this.refreshToken(live.refreshToken)) ?? live
     }
 
-    // 2. Check stored token file
-    if (existsSync(this.tokenFilePath)) {
-      try {
-        const data = readFileSync(this.tokenFilePath, "utf8")
-        this.currentTokens = JSON.parse(data)
-
-        if (this.currentTokens) {
-          // Check if expired
-          if (Date.now() > this.currentTokens.expiresAt) {
-            // Try to refresh
-            const refreshed = await this.refreshToken(this.currentTokens.refreshToken)
-            if (refreshed) {
-              return refreshed
-            }
-          }
-          return this.currentTokens
-        }
-      } catch (error) {
-        console.error("Error reading token file:", error)
+    // 2. The token file
+    const stored = readTokenFile(this.tokenFilePath, "token file")
+    if (stored.isSome()) {
+      this.currentTokens = stored
+      const tokens = stored.value
+      if (Date.now() > tokens.expiresAt) {
+        return (await this.refreshToken(tokens.refreshToken)) ?? tokens
       }
+      return tokens
     }
 
-    // 3. Check legacy token file location
-    const legacyPath = join(process.cwd(), "tokens.json")
-    if (existsSync(legacyPath)) {
-      try {
-        const data = readFileSync(legacyPath, "utf8")
-        const tokens = JSON.parse(data)
-
-        // Migrate to new location
-        this.saveTokens(tokens)
-
-        return tokens
-      } catch (error) {
-        console.error("Error reading legacy token file:", error)
-      }
+    // 3. The legacy ./tokens.json, migrated to the token file as found
+    const legacy = readTokenFile(join(process.cwd(), "tokens.json"), "legacy token file")
+    if (legacy.isSome()) {
+      this.saveTokens(legacy.value)
+      return legacy.value
     }
 
     return null
@@ -151,8 +132,8 @@ export class TokenManager {
   // minted on an earlier day still looks valid for its first hour in this process, and
   // getTokens() would hand the same dead token straight back. Refresh it now instead.
   async refreshRejectedToken(rejectedAccessToken: string): Promise<TokenData | null> {
-    const live = this.currentTokens ?? this.readEnvTokens()
-    if (!live) return null
+    const live = (this.currentTokens.isSome() ? this.currentTokens : this.readEnvTokens()).orNull()
+    if (live === null) return null
 
     // Another request already replaced the token this one was sent with.
     if (live.accessToken !== rejectedAccessToken) return live
@@ -161,105 +142,87 @@ export class TokenManager {
   }
 
   async refreshToken(refreshToken: string): Promise<TokenData | null> {
-    try {
-      // Get client credentials from stored tokens or environment
-      const clientId = this.currentTokens?.clientId || process.env.CLIENT_ID
-      const clientSecret = this.currentTokens?.clientSecret || process.env.CLIENT_SECRET
-      const tenantId = this.currentTokens?.tenantId || process.env.TENANT_ID || "organizations"
+    // Client credentials come from the stored tokens, then the environment
+    const stored = this.currentTokens.orUndefined()
+    const clientId = stored?.clientId || process.env.CLIENT_ID
+    const clientSecret = stored?.clientSecret || process.env.CLIENT_SECRET
+    const tenantId = stored?.tenantId || process.env.TENANT_ID || "organizations"
 
-      if (!clientId || !clientSecret) {
-        console.error("Missing client credentials for token refresh")
-        return null
-      }
+    if (!clientId || !clientSecret) {
+      console.error("Missing client credentials for token refresh")
+      return null
+    }
 
-      const tokenEndpoint = `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`
-
-      const formData = new URLSearchParams({
+    const result = await Http.post<TokenResponse>(`https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`, {
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
         client_id: clientId,
         client_secret: clientSecret,
         refresh_token: refreshToken,
         grant_type: "refresh_token",
-        scope: "offline_access Tasks.Read Tasks.ReadWrite Tasks.Read.Shared Tasks.ReadWrite.Shared User.Read",
-      })
+        scope: SCOPE,
+      }).toString(),
+      parseAs: "json",
+    }).run()
 
-      const response = await fetch(tokenEndpoint, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded",
-        },
-        body: formData,
-      })
-
-      if (!response.ok) {
-        const errorText = await response.text()
-        console.error(`Token refresh failed: ${errorText}`)
-
-        // If refresh fails, prompt for re-authentication
-        this.promptForReauth()
-        return null
-      }
-
-      const data = await response.json()
-
-      const newTokens: StoredTokenData = {
-        accessToken: data.access_token,
-        refreshToken: data.refresh_token || refreshToken,
-        expiresAt: Date.now() + data.expires_in * 1000 - 5 * 60 * 1000, // 5 min buffer
-        clientId,
-        clientSecret,
-        tenantId,
-      }
-
-      // Save the refreshed tokens
-      this.saveTokens(newTokens)
-
-      // Also update Claude config if possible
-      await this.updateClaudeConfig(newTokens)
-
-      return newTokens
-    } catch (error) {
-      console.error("Error refreshing token:", error)
+    if (result.isLeft()) {
+      const error = result.value
+      console.error(
+        error && typeof error === "object" && "_tag" in error && error._tag === "HttpStatusError"
+          ? `Token refresh failed: ${error.body}`
+          : `Error refreshing token: ${String((error as { cause?: unknown })?.cause ?? error)}`,
+      )
       this.promptForReauth()
       return null
     }
+
+    const data = result.value.data
+    const newTokens: StoredTokenData = {
+      accessToken: data.access_token,
+      refreshToken: data.refresh_token || refreshToken,
+      expiresAt: Date.now() + data.expires_in * 1000 - REFRESH_BUFFER_MS,
+      clientId,
+      clientSecret,
+      tenantId,
+    }
+
+    this.saveTokens(newTokens)
+    await this.updateClaudeConfig(newTokens)
+    return newTokens
   }
 
   saveTokens(tokens: StoredTokenData): void {
-    this.currentTokens = tokens
+    this.currentTokens = Some(tokens)
     writeFileSync(this.tokenFilePath, JSON.stringify(tokens, null, 2), "utf8")
   }
 
   // Update Claude config automatically
   async updateClaudeConfig(tokens: TokenData): Promise<void> {
-    try {
-      const claudeConfigPath =
-        process.platform === "win32"
-          ? join(process.env.APPDATA || "", "Claude", "claude_desktop_config.json")
-          : process.platform === "darwin"
-            ? join(homedir(), "Library", "Application Support", "Claude", "claude_desktop_config.json")
-            : join(homedir(), ".config", "Claude", "claude_desktop_config.json")
+    const claudeConfigPath =
+      process.platform === "win32"
+        ? join(process.env.APPDATA || "", "Claude", "claude_desktop_config.json")
+        : process.platform === "darwin"
+          ? join(homedir(), "Library", "Application Support", "Claude", "claude_desktop_config.json")
+          : join(homedir(), ".config", "Claude", "claude_desktop_config.json")
 
-      if (!existsSync(claudeConfigPath)) {
-        return
-      }
+    if (!existsSync(claudeConfigPath)) return
 
+    Try(() => {
       const config = JSON.parse(readFileSync(claudeConfigPath, "utf8"))
+      const entry = config.mcpServers?.["microsoft-todo"]
+      if (!entry) return
 
-      // Update the microsoft-todo server config
-      if (config.mcpServers && config.mcpServers["microsoft-todo"]) {
-        config.mcpServers["microsoft-todo"].env = {
-          ...config.mcpServers["microsoft-todo"].env,
-          MS_TODO_ACCESS_TOKEN: tokens.accessToken,
-          MS_TODO_REFRESH_TOKEN: tokens.refreshToken,
-        }
-
-        // Write back the updated config
-        writeFileSync(claudeConfigPath, JSON.stringify(config, null, 2), "utf8")
-        console.error("Updated Claude config with new tokens")
+      entry.env = {
+        ...entry.env,
+        MS_TODO_ACCESS_TOKEN: tokens.accessToken,
+        MS_TODO_REFRESH_TOKEN: tokens.refreshToken,
       }
-    } catch (error) {
-      console.error("Could not update Claude config:", error)
-    }
+      writeFileSync(claudeConfigPath, JSON.stringify(config, null, 2), "utf8")
+      console.error("Updated Claude config with new tokens")
+    }).fold(
+      (error) => console.error("Could not update Claude config:", error),
+      () => undefined,
+    )
   }
 
   promptForReauth(): void {
@@ -283,12 +246,10 @@ Your tokens are stored in: ${this.tokenFilePath}
 
   // Store client credentials with tokens for future refreshes
   async storeCredentials(clientId: string, clientSecret: string, tenantId: string): Promise<void> {
-    if (this.currentTokens) {
-      this.currentTokens.clientId = clientId
-      this.currentTokens.clientSecret = clientSecret
-      this.currentTokens.tenantId = tenantId
-      this.saveTokens(this.currentTokens)
-    }
+    this.currentTokens.fold(
+      () => undefined,
+      (tokens) => this.saveTokens({ ...tokens, clientId, clientSecret, tenantId }),
+    )
   }
 }
 
