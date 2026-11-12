@@ -152,11 +152,13 @@ describe("delete-checklist-item", () => {
     expect(text).toBe("Checklist item with ID: C1 was successfully deleted from task: T1")
   })
 
-  it("KNOWN ISSUE: reports success even when Graph refuses the delete", async () => {
+  it("reports Graph's refusal instead of success", async () => {
     h.net.on("DELETE", `${ITEMS}/C1`, graphError(404, "itemNotFound", "gone"))
 
     expect(
       (await h.callTool("delete-checklist-item", { listId: "L1", taskId: "T1", checklistItemId: "C1" })).text,
-    ).toBe("Checklist item with ID: C1 was successfully deleted from task: T1")
+    ).toBe(
+      'Failed to delete checklist item with ID: C1 from task: T1: HTTP error! status: 404, body: {"error":{"code":"itemNotFound","message":"gone"}}',
+    )
   })
 })

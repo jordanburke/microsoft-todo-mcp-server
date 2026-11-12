@@ -683,9 +683,10 @@ server.addTool({
       const url = `${MS_GRAPH_BASE}/me/todo/lists/${listId}`
       console.error(`Deleting task list: ${url}`)
 
-      // KNOWN ISSUE: the outcome is not checked, so a refused delete also reports success.
-      await runOrNull(graphRequest<void>(url, token, "DELETE"))
-      return reply(`Task list with ID: ${listId} was successfully deleted.`)
+      return (await graphRequest<void>(url, token, "DELETE").run()).fold(
+        (error) => reply(`Failed to delete task list with ID: ${listId}: ${graphErrorText(error)}`),
+        () => reply(`Task list with ID: ${listId} was successfully deleted.`),
+      )
     } catch (error) {
       return reply(`Error deleting task list: ${error}`)
     }
@@ -1114,9 +1115,10 @@ server.addTool({
       const url = `${MS_GRAPH_BASE}/me/todo/lists/${listId}/tasks/${taskId}`
       console.error(`Deleting task: ${url}`)
 
-      // KNOWN ISSUE: the outcome is not checked, so a refused delete also reports success.
-      await runOrNull(graphRequest<void>(url, token, "DELETE"))
-      return reply(`Task with ID: ${taskId} was successfully deleted from list: ${listId}`)
+      return (await graphRequest<void>(url, token, "DELETE").run()).fold(
+        (error) => reply(`Failed to delete task with ID: ${taskId} from list: ${listId}: ${graphErrorText(error)}`),
+        () => reply(`Task with ID: ${taskId} was successfully deleted from list: ${listId}`),
+      )
     } catch (error) {
       return reply(`Error deleting task: ${error}`)
     }
@@ -1286,9 +1288,13 @@ server.addTool({
       const url = `${MS_GRAPH_BASE}/me/todo/lists/${listId}/tasks/${taskId}/checklistItems/${checklistItemId}`
       console.error(`Deleting checklist item: ${url}`)
 
-      // KNOWN ISSUE: the outcome is not checked, so a refused delete also reports success.
-      await runOrNull(graphRequest<void>(url, token, "DELETE"))
-      return reply(`Checklist item with ID: ${checklistItemId} was successfully deleted from task: ${taskId}`)
+      return (await graphRequest<void>(url, token, "DELETE").run()).fold(
+        (error) =>
+          reply(
+            `Failed to delete checklist item with ID: ${checklistItemId} from task: ${taskId}: ${graphErrorText(error)}`,
+          ),
+        () => reply(`Checklist item with ID: ${checklistItemId} was successfully deleted from task: ${taskId}`),
+      )
     } catch (error) {
       return reply(`Error deleting checklist item: ${error}`)
     }

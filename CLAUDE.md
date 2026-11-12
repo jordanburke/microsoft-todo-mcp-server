@@ -131,7 +131,6 @@ gh release create vX.Y.Z --title vX.Y.Z --generate-notes --verify-tag
 
 ## Known Issues (not yet fixed)
 
-- `delete-task`, `delete-task-list` and `delete-checklist-item` report success without checking Graph's response, so an unknown ID "succeeds".
 - `archive-completed-tasks` counts a task as archived once its copy is created, even if deleting it from the source list then fails (the task ends up in both lists).
 - `test-graph-api-exploration` reports a failed request as `Found! Response: null`, because Graph failures return `null` rather than throwing.
 - Two calls that find the token expired at the same moment each renew it; there is no shared in-flight refresh.
