@@ -284,11 +284,11 @@ describe("delete-task", () => {
     expect(text).toBe("Task with ID: T1 was successfully deleted from list: L1")
   })
 
-  it("KNOWN ISSUE: reports success even when Graph refuses the delete", async () => {
+  it("reports Graph's refusal instead of success", async () => {
     h.net.on("DELETE", `${TASKS}/missing`, graphError(404, "itemNotFound", "The task was not found"))
 
     expect((await h.callTool("delete-task", { listId: "L1", taskId: "missing" })).text).toBe(
-      "Task with ID: missing was successfully deleted from list: L1",
+      'Failed to delete task with ID: missing from list: L1: HTTP error! status: 404, body: {"error":{"code":"itemNotFound","message":"The task was not found"}}',
     )
   })
 })

@@ -200,6 +200,9 @@ importers:
       express:
         specifier: ^5.3.0
         version: 5.3.0(supports-color@7.2.0)
+      functype:
+        specifier: ^1.26.0
+        version: 1.26.0
       somamcp:
         specifier: ^2.4.0
         version: 2.4.0
@@ -1289,8 +1292,8 @@ packages:
     peerDependencies:
       functype: '>=0.60.0'
 
-  functype@1.21.1:
-    resolution: {integrity: sha512-7msJFdDcIebV1YEhnI8sUNHXbA2R0/NfB4QjFK3WB0026+60cO/HV28Y6BtCfIABoBLx7Fbsnru0HQPLQc7z5Q==}
+  functype@1.26.0:
+    resolution: {integrity: sha512-iRZL6OevKZQSv7ucswdPusutiFC0KS4er22WPb3UeJPRiHXfIRDBQi0zrqMqmtjtx+gQgiKhyORBKJW9zKwHzw==}
     hasBin: true
 
   get-intrinsic@1.3.0:
@@ -3029,16 +3032,16 @@ snapshots:
 
   function-bind@1.1.2: {}
 
-  functype-log@1.23.0(functype@1.21.1):
+  functype-log@1.23.0(functype@1.26.0):
     dependencies:
-      functype: 1.21.1
+      functype: 1.26.0
       loglayer: 9.4.0
 
-  functype-os@1.21.1(functype@1.21.1):
+  functype-os@1.21.1(functype@1.26.0):
     dependencies:
-      functype: 1.21.1
+      functype: 1.26.0
 
-  functype@1.21.1: {}
+  functype@1.26.0: {}
 
   get-intrinsic@1.3.0:
     dependencies:
@@ -3536,8 +3539,8 @@ snapshots:
       '@hono/node-server': 2.1.5(hono@4.13.14)
       '@modelcontextprotocol/client': 2.4.0
       '@modelcontextprotocol/server': 2.4.0
-      functype: 1.21.1
-      functype-log: 1.23.0(functype@1.21.1)
+      functype: 1.26.0
+      functype-log: 1.23.0(functype@1.26.0)
       hono: 4.13.14
       zod: 4.6.7
 
@@ -3591,8 +3594,8 @@ snapshots:
       eslint-plugin-functype: 2.121.1(eslint@10.13.0(supports-color@7.2.0))
       eslint-plugin-prettier: 5.5.7(eslint-config-prettier@10.1.8(eslint@10.13.0(supports-color@7.2.0)))(eslint@10.13.0(supports-color@7.2.0))(prettier@3.9.10)
       eslint-plugin-simple-import-sort: 14.0.0(eslint@10.13.0(supports-color@7.2.0))
-      functype: 1.21.1
-      functype-os: 1.21.1(functype@1.21.1)
+      functype: 1.26.0
+      functype-os: 1.21.1(functype@1.26.0)
       globals: 17.13.0
       prettier: 3.9.10
       ts-node: 10.9.2(@types/node@22.20.5)(typescript@6.0.3)

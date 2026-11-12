@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs"
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs"
 import { tmpdir } from "os"
 import { join } from "path"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
@@ -321,14 +321,29 @@ describe("token file", () => {
     expect(await new TokenManager().getTokens()).toBeNull()
   })
 
-  it("KNOWN ISSUE: two callers that find the token expired at once both renew it", async () => {
+  it("renews once when two callers find the token expired at the same moment", async () => {
     writeTokenFile({ accessToken: "stale", refreshToken: "r", expiresAt: 0 })
     const fetchMock = stubRefresh("renewed")
     const manager = new TokenManager()
 
-    await Promise.all([manager.getTokens(), manager.getTokens()])
+    const [first, second] = await Promise.all([manager.getTokens(), manager.getTokens()])
 
-    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(fetchMock).toHaveBeenCalledOnce()
+    expect([first?.accessToken, second?.accessToken]).toEqual(["renewed", "renewed"])
+  })
+
+  it("starts a fresh renewal once the previous one has finished", async () => {
+    writeTokenFile({ accessToken: "stale", refreshToken: "r", expiresAt: 0 })
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => Response.json({ error: "invalid_grant" }, { status: 400 })),
+    )
+    const manager = new TokenManager()
+
+    await manager.getTokens()
+    await manager.getTokens()
+
+    expect(vi.mocked(fetch)).toHaveBeenCalledTimes(2)
   })
 })
 
@@ -448,5 +463,72 @@ describe("Claude Desktop config after a renewal", () => {
     await new TokenManager().getTokens()
 
     expect(JSON.parse(readFileSync(claudeConfig(), "utf8"))).toEqual({ mcpServers: { mstodo: { command: "npx" } } })
+  })
+})
+
+// Root ignores file modes, so these run only where chmod can make a file read-only.
+const canMakeReadOnly = process.getuid?.() !== 0
+
+describe.runIf(canMakeReadOnly)("a token file that cannot be written", () => {
+  it("still hands back the renewed token, and keeps using it", async () => {
+    writeTokenFile({ accessToken: "stale", refreshToken: "r", expiresAt: 0 })
+    chmodSync(tokenFile, 0o444)
+    const fetchMock = stubRefresh("renewed")
+    const manager = new TokenManager()
+
+    const first = await manager.getTokens()
+    const second = await manager.refreshRejectedToken("stale")
+
+    expect(first?.accessToken).toBe("renewed")
+    expect(second?.accessToken).toBe("renewed")
+    expect(fetchMock).toHaveBeenCalledOnce()
+    expect(readTokenFile().accessToken).toBe("stale")
+  })
+
+  it("still returns legacy tokens it could not copy", async () => {
+    mkdirSync(join(dir, "ro"))
+    process.env.MSTODO_TOKEN_FILE = join(dir, "ro", "tokens.json")
+    chmodSync(join(dir, "ro"), 0o555)
+    writeTokenFile(
+      { accessToken: "legacy", refreshToken: "r", expiresAt: Date.now() + 60_000 },
+      join(dir, "tokens.json"),
+    )
+
+    try {
+      expect((await new TokenManager().getTokens())?.accessToken).toBe("legacy")
+    } finally {
+      chmodSync(join(dir, "ro"), 0o755)
+    }
+  })
+})
+
+describe("overlapping renewals for different refresh tokens", () => {
+  it("does not let one finishing clear the other", async () => {
+    const releases: Array<() => void> = []
+    const fetchMock = vi.fn(
+      (_url: string, init: RequestInit) =>
+        new Promise<Response>((resolve) => {
+          const token = new URLSearchParams(String(init.body)).get("refresh_token")
+          releases.push(() =>
+            resolve(
+              Response.json({ access_token: `renewed-${token}`, refresh_token: `next-${token}`, expires_in: 3600 }),
+            ),
+          )
+        }),
+    )
+    vi.stubGlobal("fetch", fetchMock)
+    const manager = new TokenManager()
+
+    const a = manager.refreshToken("a")
+    const b = manager.refreshToken("b")
+    await vi.waitFor(() => expect(releases).toHaveLength(2))
+    releases[0]()
+    await a
+    const bAgain = manager.refreshToken("b")
+    releases[1]()
+
+    expect((await b)?.accessToken).toBe("renewed-b")
+    expect((await bAgain)?.accessToken).toBe("renewed-b")
+    expect(fetchMock).toHaveBeenCalledTimes(2)
   })
 })

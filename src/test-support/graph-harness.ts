@@ -160,7 +160,7 @@ export class FakeNetwork {
         this.calls.push(call)
         for (const route of this.routes) {
           const reply = route(call)
-          if (reply !== undefined) return typeof reply === "function" ? reply(call) : reply.clone()
+          if (reply !== undefined) return (typeof reply === "function" ? reply(call) : reply).clone()
         }
         this.unrouted.push(call)
         return json({ error: { code: "unrouted", message: `no fake route for ${call.method} ${call.url}` } }, 599)

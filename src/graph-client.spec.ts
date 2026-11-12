@@ -3,7 +3,7 @@
 // refresh changes the token manager's state.
 import { readFileSync } from "fs"
 import { join } from "path"
-import { afterEach, beforeEach, describe, expect, it } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import {
   graphError,
@@ -100,8 +100,9 @@ describe("401 from Graph", () => {
       .onTokenRefresh(renewed("fresh-token"))
 
     await h.callTool("get-task-lists")
-    await h.callTool("get-task-lists")
+    const second = await h.callTool("get-task-lists")
 
+    expect(second.text).toContain("ID: L1")
     expect(h.net.calls.at(-1)?.headers.authorization).toBe("Bearer fresh-token")
     expect(h.net.calls).toHaveLength(4)
     expect(JSON.parse(readFileSync(join(h.dir, "tokens.json"), "utf8"))).toMatchObject({
@@ -182,6 +183,15 @@ describe("failures", () => {
 
     // The reason's wording comes from the JSON parser, so only its presence is pinned.
     expect(text).toMatch(/^Failed to create task in list: L1: \S/)
+  })
+
+  it("logs the failure reason to stderr even when the reply does not show it", async () => {
+    h.net.on("GET", LISTS, graphError(500, "generalException", "boom"))
+
+    expect((await h.callTool("get-task-lists")).text).toBe("Failed to retrieve task lists")
+
+    const logged = vi.mocked(console.error).mock.calls.map((args) => args.join(" "))
+    expect(logged.some((line) => line.includes("status: 500") && line.includes("generalException"))).toBe(true)
   })
 
   it("reports every Graph failure as an ordinary result, not an isError one", async () => {
