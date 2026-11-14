@@ -8,7 +8,7 @@
 // `startServer` additionally gives each server its own temp directory for the working
 // directory, the token file and HOME/APPDATA, before the server module (and its
 // token-manager singleton) is imported.
-import { mkdtempSync, rmSync, writeFileSync } from "fs"
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "fs"
 import { tmpdir } from "os"
 import { join } from "path"
 import { expect, vi } from "vitest"
@@ -202,15 +202,27 @@ const ENV_KEYS = [
  * its own token manager. Start it after faking the clock, if a spec fakes it: an env token's
  * expiry is read when the server first sees it.
  */
-export async function startServer(tokens: TokenSetup = { kind: "env" }): Promise<Harness> {
+export type ServerOptions = {
+  // Point MSTODO_TOKEN_FILE into a folder that cannot be created (its parent is read-only),
+  // as in a container whose HOME is not writable. Use with env or no tokens.
+  readonly uncreatableTokenDir?: boolean
+}
+
+export async function startServer(tokens: TokenSetup = { kind: "env" }, options: ServerOptions = {}): Promise<Harness> {
   const saved = Object.fromEntries(ENV_KEYS.map((k) => [k, process.env[k]]))
   const originalCwd = process.cwd()
   const dir = mkdtempSync(join(tmpdir(), "mstodo-spec-"))
+  const locked = join(dir, "locked")
 
   process.chdir(dir)
   process.env.HOME = dir
   process.env.APPDATA = join(dir, "AppData")
   process.env.MSTODO_TOKEN_FILE = join(dir, "tokens.json")
+  if (options.uncreatableTokenDir) {
+    mkdirSync(locked)
+    chmodSync(locked, 0o555)
+    process.env.MSTODO_TOKEN_FILE = join(locked, "config", "tokens.json")
+  }
   process.env.CLIENT_ID = "spec-client-id"
   process.env.CLIENT_SECRET = "spec-client-secret"
   delete process.env.TENANT_ID
@@ -224,11 +236,25 @@ export async function startServer(tokens: TokenSetup = { kind: "env" }): Promise
     writeFileSync(join(dir, "tokens.json"), JSON.stringify(tokens.tokens))
   }
 
+  const restore = (): void => {
+    process.chdir(originalCwd)
+    if (options.uncreatableTokenDir) chmodSync(locked, 0o755)
+    rmSync(dir, { recursive: true, force: true })
+    for (const k of ENV_KEYS) {
+      if (saved[k] === undefined) delete process.env[k]
+      else process.env[k] = saved[k]
+    }
+  }
+
   const net = new FakeNetwork()
   // A fresh module graph each time, so a spec can start from clean token-manager state
-  // by calling startServer in beforeEach rather than beforeAll.
+  // by calling startServer in beforeEach rather than beforeAll. If the import throws, no
+  // cleanup is handed back, so undo the setup here.
   vi.resetModules()
-  const { server } = await import("../todo-index.js")
+  const { server } = await import("../todo-index.js").catch((error: unknown) => {
+    restore()
+    throw error
+  })
   let rpcId = 0
 
   const rpc: Harness["rpc"] = async (method, params) => {
@@ -258,14 +284,7 @@ export async function startServer(tokens: TokenSetup = { kind: "env" }): Promise
         content: result.content,
       }
     },
-    cleanup() {
-      process.chdir(originalCwd)
-      rmSync(dir, { recursive: true, force: true })
-      for (const k of ENV_KEYS) {
-        if (saved[k] === undefined) delete process.env[k]
-        else process.env[k] = saved[k]
-      }
-    },
+    cleanup: restore,
   }
 }
 

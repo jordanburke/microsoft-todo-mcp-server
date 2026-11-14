@@ -57,6 +57,11 @@ const readTokenFile = (path: string, label: string): Option<StoredTokenData> =>
       )
     : None<StoredTokenData>()
 
+// os.homedir() throws when HOME is unset and the user has no passwd entry, as in some
+// containers. This runs while the module loads, so fall back to the working directory
+// rather than stop the server before it answers anything.
+export const homeOr = (home: () => string, fallback: string): string => Try(home).orElse(fallback)
+
 export class TokenManager {
   private tokenFilePath: string
   private currentTokens: Option<StoredTokenData> = None()
@@ -69,8 +74,10 @@ export class TokenManager {
   private inFlight: Option<{ refreshToken: string; renewal: Promise<TokenData | null> }> = None()
 
   constructor() {
+    // The folder is made when tokens are first saved, not here: this runs while the module
+    // loads, so a folder that cannot be made (HOME not writable, as in some containers) used
+    // to stop the server before it answered anything.
     this.tokenFilePath = TokenManager.resolveTokenFilePath()
-    mkdirSync(dirname(this.tokenFilePath), { recursive: true })
     console.error(`Token file path: ${this.tokenFilePath}`)
   }
 
@@ -82,10 +89,11 @@ export class TokenManager {
     if (override) return resolve(override)
 
     // Otherwise a consistent location across platforms
+    const home = homeOr(homedir, process.cwd())
     const configDir =
       process.platform === "win32"
-        ? join(process.env.APPDATA || join(homedir(), "AppData", "Roaming"), "microsoft-todo-mcp")
-        : join(homedir(), ".config", "microsoft-todo-mcp")
+        ? join(process.env.APPDATA || join(home, "AppData", "Roaming"), "microsoft-todo-mcp")
+        : join(home, ".config", "microsoft-todo-mcp")
 
     return join(configDir, "tokens.json")
   }
@@ -260,6 +268,7 @@ export class TokenManager {
 
   saveTokens(tokens: StoredTokenData): void {
     this.currentTokens = Some(tokens)
+    mkdirSync(dirname(this.tokenFilePath), { recursive: true })
     writeFileSync(this.tokenFilePath, JSON.stringify(tokens, null, 2), "utf8")
   }
 

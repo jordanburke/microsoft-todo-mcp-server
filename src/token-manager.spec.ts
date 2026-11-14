@@ -3,7 +3,10 @@ import { tmpdir } from "os"
 import { join } from "path"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
-import { TokenManager } from "./token-manager.js"
+import { homeOr, TokenManager } from "./token-manager.js"
+
+// chmod does not bind root, so the read-only specs prove nothing there and are skipped.
+const canMakeReadOnly = process.getuid?.() !== 0
 
 // A Graph access token is a JWT, so its real expiry is readable from the `exp` claim.
 // Tests build one rather than relying on a fixed string, so they do not rot.
@@ -85,6 +88,49 @@ describe("MSTODO_TOKEN_FILE", () => {
     await new TokenManager().getTokens()
 
     expect(JSON.parse(readFileSync(tokenFile, "utf8")).accessToken).toBe("renewed")
+  })
+})
+
+describe("the token file's folder", () => {
+  it("is not created until tokens are saved", () => {
+    process.env.MSTODO_TOKEN_FILE = join(dir, "new", "sub", "tokens.json")
+
+    new TokenManager()
+
+    expect(existsSync(join(dir, "new"))).toBe(false)
+  })
+
+  it.runIf(canMakeReadOnly)("does not stop the manager starting when it cannot be created", async () => {
+    mkdirSync(join(dir, "locked"))
+    chmodSync(join(dir, "locked"), 0o555)
+    process.env.MSTODO_TOKEN_FILE = join(dir, "locked", "config", "tokens.json")
+
+    try {
+      expect(await new TokenManager().getTokens()).toBeNull()
+    } finally {
+      chmodSync(join(dir, "locked"), 0o755)
+    }
+  })
+
+  it("falls back to the working directory when there is no home directory", () => {
+    const noHome = () => {
+      throw new Error("ENOENT: uv_os_homedir")
+    }
+
+    expect(homeOr(noHome, "/work")).toBe("/work")
+    expect(homeOr(() => "/home/me", "/work")).toBe("/home/me")
+  })
+
+  it("is created when a renewal saves its tokens", async () => {
+    const nested = join(dir, "new", "sub", "tokens.json")
+    process.env.MSTODO_TOKEN_FILE = nested
+    process.env.MS_TODO_ACCESS_TOKEN = jwtExpiringIn(-60)
+    process.env.MS_TODO_REFRESH_TOKEN = "env-refresh"
+    stubRefresh("renewed")
+
+    await new TokenManager().getTokens()
+
+    expect(JSON.parse(readFileSync(nested, "utf8")).accessToken).toBe("renewed")
   })
 })
 
@@ -533,8 +579,6 @@ describe("Claude Desktop config after a renewal", () => {
 })
 
 // Root ignores file modes, so these run only where chmod can make a file read-only.
-const canMakeReadOnly = process.getuid?.() !== 0
-
 describe.runIf(canMakeReadOnly)("a token file that cannot be written", () => {
   it("still hands back the renewed token, and keeps using it", async () => {
     writeTokenFile({ accessToken: "stale", refreshToken: "r", expiresAt: 0 })
