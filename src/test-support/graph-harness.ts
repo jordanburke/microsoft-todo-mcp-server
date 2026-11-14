@@ -236,11 +236,25 @@ export async function startServer(tokens: TokenSetup = { kind: "env" }, options:
     writeFileSync(join(dir, "tokens.json"), JSON.stringify(tokens.tokens))
   }
 
+  const restore = (): void => {
+    process.chdir(originalCwd)
+    if (options.uncreatableTokenDir) chmodSync(locked, 0o755)
+    rmSync(dir, { recursive: true, force: true })
+    for (const k of ENV_KEYS) {
+      if (saved[k] === undefined) delete process.env[k]
+      else process.env[k] = saved[k]
+    }
+  }
+
   const net = new FakeNetwork()
   // A fresh module graph each time, so a spec can start from clean token-manager state
-  // by calling startServer in beforeEach rather than beforeAll.
+  // by calling startServer in beforeEach rather than beforeAll. If the import throws, no
+  // cleanup is handed back, so undo the setup here.
   vi.resetModules()
-  const { server } = await import("../todo-index.js")
+  const { server } = await import("../todo-index.js").catch((error: unknown) => {
+    restore()
+    throw error
+  })
   let rpcId = 0
 
   const rpc: Harness["rpc"] = async (method, params) => {
@@ -270,15 +284,7 @@ export async function startServer(tokens: TokenSetup = { kind: "env" }, options:
         content: result.content,
       }
     },
-    cleanup() {
-      process.chdir(originalCwd)
-      if (options.uncreatableTokenDir) chmodSync(locked, 0o755)
-      rmSync(dir, { recursive: true, force: true })
-      for (const k of ENV_KEYS) {
-        if (saved[k] === undefined) delete process.env[k]
-        else process.env[k] = saved[k]
-      }
-    },
+    cleanup: restore,
   }
 }
 

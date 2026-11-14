@@ -109,7 +109,8 @@ describe("a 401 for a token the file says is live", () => {
 
 // A container whose HOME is not writable, or a token path whose folder cannot be made. The
 // server used to create the folder while loading, so it exited before answering anything.
-describe("a token folder that cannot be created", () => {
+// chmod does not bind root, so this proves nothing there and is skipped.
+describe.runIf(process.getuid?.() !== 0)("a token folder that cannot be created", () => {
   beforeEach(async () => {
     h = await startServer({ kind: "env" }, { uncreatableTokenDir: true })
     resetNetwork(h.net)
