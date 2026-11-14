@@ -5,7 +5,7 @@ import { localCredentials } from "./local-credentials.js"
 import { createTodoServer } from "./todo-server.js"
 
 // Load environment variables
-dotenv.config()
+dotenv.config({ quiet: true })
 
 // Log the current working directory
 console.error("Current working directory:", process.cwd())
