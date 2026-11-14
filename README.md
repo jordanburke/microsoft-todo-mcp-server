@@ -36,7 +36,7 @@ Want to run it on your own machine, or keep your tokens local? Keep reading to s
 
 ## Prerequisites
 
-- Node.js 20 or higher (CI tests 22.x and 24.x); building from source needs 22.18 or higher, or 24.11 or higher
+- Node.js 22.18 or higher (CI tests 22.18.0, 24.x and 26.x); building from source needs 22.18+, 24.11+ or 26+
 - pnpm, only to build from source
 - A Microsoft account (personal, work, or school)
 - Azure App Registration (see setup below)
