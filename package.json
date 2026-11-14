@@ -9,7 +9,7 @@
     "dotenv": "^16.6.1",
     "express": "^5.3.0",
     "functype": "^1.26.0",
-    "somamcp": "^2.6.0",
+    "somamcp": "^2.8.0",
     "zod": "^4.6.7"
   },
   "scripts": {

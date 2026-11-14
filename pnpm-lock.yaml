@@ -204,8 +204,8 @@ importers:
         specifier: ^1.26.0
         version: 1.26.0
       somamcp:
-        specifier: ^2.6.0
-        version: 2.6.0
+        specifier: ^2.8.0
+        version: 2.8.0
       zod:
         specifier: ^4.6.7
         version: 4.6.7
@@ -1791,8 +1791,8 @@ packages:
     resolution: {integrity: sha512-2wcC/oGxHis/BoHkkPwldgiPSYcpZK3JU28WoMVv55yHJgcZ8rlXvuG9iZggz+sU1d4bRgIGASwyWqjxu3FM0g==}
     engines: {node: '>=18'}
 
-  somamcp@2.6.0:
-    resolution: {integrity: sha512-Rjw5z1UZ3FI5zrNggCdSIEe+BSy7zwNQdRDgkReFb/srZP1EvwrYF0/eYKK/b3pK6samehX0EZXYdAcdwlGgWg==}
+  somamcp@2.8.0:
+    resolution: {integrity: sha512-hk09mhX8OvLQ+gqMaO+pTobytREa6nPShcl2kg1bS7dny1vZocPmL6N6VzSIYSAjg22eEl3szGRSVsSvkyoatw==}
     peerDependencies:
       '@opentelemetry/api': ^1.9.0
     peerDependenciesMeta:
@@ -3539,7 +3539,7 @@ snapshots:
       mrmime: 2.0.1
       totalist: 3.0.1
 
-  somamcp@2.6.0:
+  somamcp@2.8.0:
     dependencies:
       '@hono/node-server': 2.1.7(hono@4.13.18)
       '@modelcontextprotocol/client': 2.4.0

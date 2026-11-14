@@ -54,10 +54,12 @@ const list = (value: string): string[] =>
     .filter((item) => item !== "")
 
 /**
- * Why a redirect URI pattern is unsafe, or undefined if it is safe. somamcp's `*` and `?` match
- * any characters, including `.` and `/`, so a wildcard anywhere before the path lets a client
- * register a host it runs (`https://claude.ai*` matches `https://claude.ai.evil.example/`). The
- * scheme and host must be literal; only a loopback host may leave the port open.
+ * Why a redirect URI pattern is unsafe, or undefined if it is safe. The scheme and host must be
+ * literal, `*` and `?` may appear only in the path, and only a loopback host may use http or leave
+ * the port open. somamcp 2.7+ also refuses unsafe patterns when the provider is built (before 2.7
+ * its `*` also matched `.` and `/`, so `https://claude.ai*` admitted `https://claude.ai.evil.example/`).
+ * This check runs first, so bad patterns are reported at startup with the setting's name. It is a
+ * little stricter than somamcp: it also wants the host in lower case, as a browser sends it.
  */
 export const redirectPatternProblem = (pattern: string): string | undefined => {
   // The host is a bracketed IPv6 address or a name with no / : ? # [ ].
@@ -65,16 +67,20 @@ export const redirectPatternProblem = (pattern: string): string | undefined => {
   const [, scheme, host, port] = parts ?? []
   const unsafe = `MSTODO_HTTP_REDIRECT_URIS pattern ${pattern}`
   if (!parts) return `${unsafe} must start with http:// or https:// and a host`
-  // somamcp matches case-sensitively, and a browser sends the host in lower case.
+  // somamcp lower-cases the host itself; this keeps the setting reading as a browser sends it.
   if (host && host !== host.toLowerCase() && HOST_NAME.test(host)) return `${unsafe} must write its host in lower case`
   // Only characters a host name or IPv6 literal can hold: anything else (a wildcard, @, a
   // backslash, whitespace) could let a matched URI parse to another host.
   if (!HOST_NAME.test(host) && !/^\[[0-9a-f:.]+\]$/.test(host))
     return `${unsafe} must name its host exactly, with no wildcard`
+  // Characters alone allow hosts no URL can hold, such as 1.2.3.999 or [1::2::3].
+  if (!URL.canParse(`${scheme}://${host}/`)) return `${unsafe} has a host that is not valid`
   const loopback = LOOPBACK.includes(host)
   if (scheme === "http" && !loopback) return `${unsafe} must use https unless its host is localhost`
-  if (port !== undefined && !/^\d+$/.test(port) && !(loopback && port === "*"))
+  if (port !== undefined && !/^\d{1,5}$/.test(port) && !(loopback && port === "*"))
     return `${unsafe} may leave the port open only for localhost`
+  if (port !== undefined && port !== "*" && (Number(port) < 1 || Number(port) > 65535))
+    return `${unsafe} has a port out of range`
   return undefined
 }
 
@@ -104,7 +110,8 @@ export const readHttpConfig = (env: NodeJS.ProcessEnv): Either<string[], HttpCon
         problems.push("MSTODO_HTTP_BASE_URL must use https (plain http is allowed only for localhost)")
       if (parsed.username || parsed.password)
         problems.push("MSTODO_HTTP_BASE_URL must not hold a user name or password")
-      if (parsed.pathname !== "/" || parsed.search || parsed.hash)
+      // URL drops an empty "?" or "#", so check the text as well.
+      if (parsed.pathname !== "/" || parsed.search || parsed.hash || /[?#]/.test(baseUrl))
         problems.push(
           "MSTODO_HTTP_BASE_URL must be an origin only, such as https://todo.example.com (no path, query or fragment)",
         )

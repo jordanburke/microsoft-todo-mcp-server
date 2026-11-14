@@ -30,7 +30,7 @@ export const azureProviderConfig = (config: HttpConfig): Omit<AzureProviderConfi
   jwtSigningKey: config.jwtSigningKey,
   encryptionKey: config.encryptionKey,
   allowedRedirectUriPatterns: config.redirectUriPatterns,
-  // OAuth 2.1 drops PKCE's plain method; somamcp accepts it unless told not to.
+  // OAuth 2.1 drops PKCE's plain method. somamcp 2.7+ refuses it by default; this pins that.
   allowPlainPkce: false,
   acceptSignIn: config.allowedUsers.length > 0 ? allowListRule(config.allowedUsers) : undefined,
 })

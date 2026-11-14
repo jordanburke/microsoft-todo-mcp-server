@@ -4,7 +4,7 @@ import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "f
 import { tmpdir } from "os"
 import { dirname, join, resolve } from "path"
 import type { AuthProvider } from "somamcp"
-import type { AzureSession } from "somamcp/node"
+import { type AzureSession, createAzureProvider } from "somamcp/node"
 import { fileURLToPath } from "url"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 
@@ -64,6 +64,8 @@ describe("readHttpConfig", () => {
     [{ MSTODO_HTTP_BASE_URL: "https://todo.example.com/todo" }, "must be an origin only"],
     [{ MSTODO_HTTP_BASE_URL: "https://todo.example.com/?a=1" }, "must be an origin only"],
     [{ MSTODO_HTTP_BASE_URL: "https://todo.example.com/#frag" }, "must be an origin only"],
+    [{ MSTODO_HTTP_BASE_URL: "https://todo.example.com?" }, "must be an origin only"],
+    [{ MSTODO_HTTP_BASE_URL: "https://todo.example.com#" }, "must be an origin only"],
     [{ MSTODO_HTTP_BASE_URL: "https://user:pw@todo.example.com" }, "must not hold a user name or password"],
     [{ TENANT_ID: "../../evil" }, "TENANT_ID must be a tenant id"],
     [{ TOKEN_ENCRYPTION_KEY: "j".repeat(48) }, "must differ"],
@@ -117,6 +119,13 @@ describe("redirectPatternProblem", () => {
     "https://claude ai/*",
     "https://claude_ai.example/*",
     "https://.claude.ai/*",
+    "https://claude.ai:0/*",
+    "https://claude.ai:65536/*",
+    "https://app.example.com:99999/cb",
+    "https://claude.ai:000080/*",
+    "https://1.2.3.999/*",
+    "https://[:::]/*",
+    "https://[1::2::3]/*",
   ])("refuses %s", (pattern) => {
     expect(redirectPatternProblem(pattern)).toBeDefined()
   })
@@ -129,8 +138,19 @@ describe("redirectPatternProblem", () => {
     "https://app.example.com:8443/cb/*",
     "http://localhost:3000/cb",
     "http://[::1]:*/*",
-  ])("accepts %s", (pattern) => {
+  ])("accepts %s, and so does somamcp's provider", (pattern) => {
     expect(redirectPatternProblem(pattern)).toBeUndefined()
+    // somamcp refuses an unsafe pattern when the provider is built; the two checks must agree,
+    // or a config this server accepts would still fail to start.
+    const config = readHttpConfig({ ...validEnv, MSTODO_HTTP_REDIRECT_URIS: pattern }).orThrow(new Error("x"))
+    expect(() => createAzureProvider(azureProviderConfig(config)).close()).not.toThrow()
+  })
+
+  it("is refused by somamcp's provider too, when this check is bypassed", () => {
+    const config = readHttpConfig(validEnv).orThrow(new Error("x"))
+    expect(() =>
+      createAzureProvider({ ...azureProviderConfig(config), allowedRedirectUriPatterns: ["https://claude.ai*"] }),
+    ).toThrow(/allowedRedirectUriPatterns/)
   })
 })
 
