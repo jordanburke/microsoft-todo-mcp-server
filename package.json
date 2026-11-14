@@ -31,7 +31,6 @@
     "test": "ts-builds test",
     "test:watch": "ts-builds test:watch",
     "prepublishOnly": "pnpm validate && pnpm check:server-json",
-    "postinstall": "echo 'To sign in, follow the Usage steps: https://github.com/jordanburke/microsoft-todo-mcp-server#usage'",
     "sync:server-json": "node scripts/sync-server-json.mjs",
     "check:server-json": "node scripts/sync-server-json.mjs --check",
     "version": "node scripts/sync-server-json.mjs && git add server.json"
