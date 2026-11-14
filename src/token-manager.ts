@@ -69,8 +69,10 @@ export class TokenManager {
   private inFlight: Option<{ refreshToken: string; renewal: Promise<TokenData | null> }> = None()
 
   constructor() {
+    // The folder is made when tokens are first saved, not here: this runs while the module
+    // loads, so a folder that cannot be made (HOME not writable, as in some containers) used
+    // to stop the server before it answered anything.
     this.tokenFilePath = TokenManager.resolveTokenFilePath()
-    mkdirSync(dirname(this.tokenFilePath), { recursive: true })
     console.error(`Token file path: ${this.tokenFilePath}`)
   }
 
@@ -260,6 +262,7 @@ export class TokenManager {
 
   saveTokens(tokens: StoredTokenData): void {
     this.currentTokens = Some(tokens)
+    mkdirSync(dirname(this.tokenFilePath), { recursive: true })
     writeFileSync(this.tokenFilePath, JSON.stringify(tokens, null, 2), "utf8")
   }
 

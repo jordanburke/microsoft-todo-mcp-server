@@ -88,6 +88,40 @@ describe("MSTODO_TOKEN_FILE", () => {
   })
 })
 
+describe("the token file's folder", () => {
+  it("is not created until tokens are saved", () => {
+    process.env.MSTODO_TOKEN_FILE = join(dir, "new", "sub", "tokens.json")
+
+    new TokenManager()
+
+    expect(existsSync(join(dir, "new"))).toBe(false)
+  })
+
+  it("does not stop the manager starting when it cannot be created", async () => {
+    mkdirSync(join(dir, "locked"))
+    chmodSync(join(dir, "locked"), 0o555)
+    process.env.MSTODO_TOKEN_FILE = join(dir, "locked", "config", "tokens.json")
+
+    try {
+      expect(await new TokenManager().getTokens()).toBeNull()
+    } finally {
+      chmodSync(join(dir, "locked"), 0o755)
+    }
+  })
+
+  it("is created when a renewal saves its tokens", async () => {
+    const nested = join(dir, "new", "sub", "tokens.json")
+    process.env.MSTODO_TOKEN_FILE = nested
+    process.env.MS_TODO_ACCESS_TOKEN = jwtExpiringIn(-60)
+    process.env.MS_TODO_REFRESH_TOKEN = "env-refresh"
+    stubRefresh("renewed")
+
+    await new TokenManager().getTokens()
+
+    expect(JSON.parse(readFileSync(nested, "utf8")).accessToken).toBe("renewed")
+  })
+})
+
 describe("environment token pair", () => {
   it("does not treat an expired access token as valid", async () => {
     process.env.MS_TODO_ACCESS_TOKEN = jwtExpiringIn(-60)

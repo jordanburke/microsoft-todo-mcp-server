@@ -100,7 +100,7 @@ This is a Model Context Protocol (MCP) server that enables AI assistants to inte
 ### Key Architectural Patterns
 
 - **functype at the edges**: a tool builds its request as an `IO`, runs it once at the MCP boundary with `.run()`, and folds the `Either` into text (`graphErrorText` renders a failure). No module-level error state. A 401 renews the token and retries once with the same body; paging follows `@odata.nextLink` to the end or the limit, capped at 100 pages. DELETE is read raw (Graph's 204 has no body); every other reply must be JSON
-- **Token Management**: Tokens are stored in `tokens.json` and renewed 5 minutes before expiry, and again whenever Graph returns 401 (`refreshRejectedToken`). `TokenManager` keeps a Promise API but holds tokens as `Option`, reads files with `Try`, renews through `Http`, and joins a renewal already under way for the same refresh token. A renewal from the env pair records the pair's fingerprint (`seededFrom`, a truncated SHA-256 of the refresh token); a later launch with that same pair, or with a file holding the same refresh token (as older versions left them), uses the token file instead. The token manager never writes to Claude Desktop's config
+- **Token Management**: Tokens are stored in `tokens.json` and renewed 5 minutes before expiry, and again whenever Graph returns 401 (`refreshRejectedToken`). `TokenManager` keeps a Promise API but holds tokens as `Option`, reads files with `Try`, renews through `Http`, and joins a renewal already under way for the same refresh token. A renewal from the env pair records the pair's fingerprint (`seededFrom`, a truncated SHA-256 of the refresh token); a later launch with that same pair, or with a file holding the same refresh token (as older versions left them), uses the token file instead. The token manager never writes to Claude Desktop's config, and it makes the token file's folder only when it first saves (in `saveTokens`), never while the module loads: a folder that cannot be made must fail the save, not stop the server starting
 - **Multi-tenant Support**: Configurable for different Microsoft account types via TENANT_ID
 - **Error Handling**: `MailboxNotEnabledForRESTAPI` becomes its own error (`MailboxNotEnabled`) with an explanation; nothing warns personal accounts up front, because they work
 - **Type Safety**: Strict TypeScript with Zod 4 schemas for parameter validation
@@ -121,6 +121,10 @@ The server communicates with Microsoft Graph API v1.0:
 
 - `MSTODO_TOKEN_FILE`: Custom path for tokens.json. Without it, the token manager uses the per-user config directory (`~/.config/microsoft-todo-mcp/tokens.json`, or `%APPDATA%\microsoft-todo-mcp\tokens.json` on Windows), then falls back to `./tokens.json` and migrates it
 - `.env` file required for authentication with CLIENT_ID, CLIENT_SECRET, TENANT_ID, REDIRECT_URI
+
+## Glama
+
+Glama lists this server; `glama.json` ties the listing to Jordan's GitHub account. Glama builds the **latest GitHub release**, not main, from the Build Spec on the listing's admin page (`debian:bookworm-slim`, Node 24, pnpm 10.14.0, which hands off to the `packageManager` pin), runs `pnpm install` and `pnpm run build`, then starts `mcp-proxy -- node dist/cli.js` with the spec's placeholder env values and calls `tools/list`. A failed check leaves the listing on an old snapshot. So the server must start and list its tools with missing or fake settings and an unwritable `HOME`; problems belong in tool results. `dist/index.js` does not exist, so the Build Spec's command must name `dist/cli.js`. The build log is only on the admin page, so Jordan has to paste it.
 
 ## Releasing
 

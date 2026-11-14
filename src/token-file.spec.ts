@@ -106,3 +106,27 @@ describe("a 401 for a token the file says is live", () => {
     expect(text).toContain("ID: L1")
   })
 })
+
+// A container whose HOME is not writable, or a token path whose folder cannot be made. The
+// server used to create the folder while loading, so it exited before answering anything.
+describe("a token folder that cannot be created", () => {
+  beforeEach(async () => {
+    h = await startServer({ kind: "env" }, { uncreatableTokenDir: true })
+    resetNetwork(h.net)
+  })
+
+  it("still lists the tools", async () => {
+    const { result } = await h.rpc("tools/list")
+
+    expect((result as { tools: unknown[] }).tools).toHaveLength(17)
+  })
+
+  it("still serves a tool call with the environment's token", async () => {
+    h.net.on("GET", LISTS, ok)
+
+    const { text, isError } = await h.callTool("get-task-lists")
+
+    expect(isError).toBe(false)
+    expect(text).toContain("Tasks")
+  })
+})
