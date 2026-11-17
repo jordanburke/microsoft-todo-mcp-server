@@ -9,7 +9,9 @@
 # before its tarball, so `npm view` answers 200 for a version whose tarball
 # still 404s — that is how prosemeter 0.5.0 shipped an uninstallable release.
 # Ten minutes, because npm can take several minutes to serve a version its
-# publish job has already accepted.
+# publish job has already accepted. Each HEAD gives up after 10 seconds, so even
+# a hung connection on every try ends the wait within 15 minutes, inside the
+# job's 20-minute cap.
 name: Publish to MCP Registry
 
 on:
@@ -52,7 +54,7 @@ jobs:
           PKG=microsoft-todo-mcp-server
           echo "Waiting for ${PKG}@${VERSION} tarball on npm..."
           for i in $(seq 1 30); do
-            if curl -sfI "https://registry.npmjs.org/${PKG}/-/${PKG}-${VERSION}.tgz" > /dev/null; then
+            if curl -sfI --max-time 10 "https://registry.npmjs.org/${PKG}/-/${PKG}-${VERSION}.tgz" > /dev/null; then
               echo "Tarball for ${VERSION} is live on npm"
               exit 0
             fi

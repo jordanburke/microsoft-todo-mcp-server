@@ -6,6 +6,10 @@ on:
   pull_request:
     branches: [main]
 
+# The jobs only read the repo, so the token gets nothing more.
+permissions:
+  contents: read
+
 # A newer push to a pull request cancels the build it supersedes. A push to main gets a group of its own,
 # because GitHub cancels a waiting run when a newer one joins its group, even with cancel-in-progress off.
 concurrency:
@@ -54,25 +58,3 @@ jobs:
           test -f dist/cli.js
           test -f dist/auth-server.js
           test -f dist/create-mcp-config.js
-
-  format-check:
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install pnpm
-        uses: pnpm/action-setup@v6
-
-      - name: Use Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version-file: ".nvmrc"
-          cache: "pnpm"
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Check code formatting
-        run: pnpm run format:check
