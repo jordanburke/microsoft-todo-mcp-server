@@ -11,6 +11,9 @@ dist/
 # Tokens and sensitive data
 tokens.json
 
+# Live-smoke snapshots: gitignored account data, written by scripts/smoke-live.mjs
+.smoke/
+
 # Package manager files
 pnpm-lock.yaml
 package-lock.json

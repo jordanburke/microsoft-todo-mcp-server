@@ -61,7 +61,7 @@ jobs:
             echo "Attempt ${i}/30 — not yet, waiting 20s..."
             sleep 20
           done
-          echo "No tarball for ${VERSION} on npm after 10 minutes"
+          echo "No tarball for ${VERSION} on npm after 30 tries"
           exit 1
 
       - name: Login to MCP Registry
