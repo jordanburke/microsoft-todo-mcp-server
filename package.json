@@ -14,6 +14,7 @@
   },
   "scripts": {
     "validate": "ts-builds validate",
+    "ci": "ts-builds ci",
     "build": "ts-builds build",
     "build:watch": "ts-builds build:watch",
     "dev": "ts-builds build && node dist/cli.js",
@@ -30,7 +31,7 @@
     "typecheck": "ts-builds typecheck",
     "test": "ts-builds test",
     "test:watch": "ts-builds test:watch",
-    "prepublishOnly": "pnpm validate && pnpm check:server-json",
+    "prepublishOnly": "pnpm run ci && pnpm check:server-json",
     "sync:server-json": "node scripts/sync-server-json.mjs",
     "check:server-json": "node scripts/sync-server-json.mjs --check",
     "version": "node scripts/sync-server-json.mjs && git add server.json"
