@@ -16,8 +16,9 @@ pnpm run ci          # Same chain, check-only (format:check, lint:check); CI, pu
 
 Build tooling is provided by **ts-builds** (4.x); package scripts delegate to the
 `ts-builds` CLI. Always type `pnpm run ci`: a bare `pnpm ci` is pnpm's own clean install, not
-this script. Every workflow cancels a superseded pull-request run (`concurrency`) and stops
-after 20 minutes (`timeout-minutes`). Output extension is forced to `.js` via `tsdown.config.ts` so the
+this script. CI cancels a pull-request run that a newer push supersedes; every other run (main,
+releases, registry retries) gets a `concurrency` group of its own and is never cancelled. Every
+job stops after 20 minutes (`timeout-minutes`). Output extension is forced to `.js` via `tsdown.config.ts` so the
 `bin`/`main` paths and `./*.js` source imports keep resolving.
 
 ### Authentication and Setup
