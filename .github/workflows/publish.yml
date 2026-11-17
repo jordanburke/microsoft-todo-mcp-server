@@ -4,9 +4,15 @@ on:
   release:
     types: [published]
 
+# Each release gets a group of its own (run_id), so a publish is never cancelled or held behind another.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   publish:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
 
     permissions:
       contents: read
@@ -36,8 +42,10 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Validate (format, lint, typecheck, test, build)
-        run: pnpm validate
+      # Checks without fixing, so what is published is exactly what was tagged. Type "run": a bare
+      # `pnpm ci` is pnpm's own clean install, not this script.
+      - name: Check (format, lint, typecheck, test, build)
+        run: pnpm run ci
 
       # No NODE_AUTH_TOKEN: pnpm exchanges the job's OIDC token for a short-lived
       # registry credential, so there is no static secret to rotate. The trust is

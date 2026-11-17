@@ -10,11 +10,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 pnpm install         # Install dependencies (pnpm 12)
 pnpm run build       # Build with ts-builds (tsdown) to dist/ directory
 pnpm run dev         # Build and run CLI in one command
-pnpm run validate    # Full chain: format, lint, typecheck, test, build
+pnpm run validate    # Full chain: format, lint, typecheck, test, build (fixes format and lint)
+pnpm run ci          # Same chain, check-only (format:check, lint:check); CI, publish and prepublishOnly run this
 ```
 
 Build tooling is provided by **ts-builds** (4.x); package scripts delegate to the
-`ts-builds` CLI. Output extension is forced to `.js` via `tsdown.config.ts` so the
+`ts-builds` CLI. Always type `pnpm run ci`: a bare `pnpm ci` is pnpm's own clean install, not
+this script. CI cancels a pull-request run that a newer push supersedes; every other run (main,
+releases, registry retries) gets a `concurrency` group of its own and is never cancelled. Every
+job stops after 20 minutes (`timeout-minutes`). Output extension is forced to `.js` via `tsdown.config.ts` so the
 `bin`/`main` paths and `./*.js` source imports keep resolving.
 
 ### Authentication and Setup

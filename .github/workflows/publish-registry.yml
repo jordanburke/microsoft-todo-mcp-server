@@ -17,9 +17,16 @@ on:
   release:
     types: [published]
 
+# Each run gets a group of its own (run_id), so a submission is never cancelled or held behind another.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   publish-registry:
     runs-on: ubuntu-latest
+    # The tarball wait alone can take ten minutes.
+    timeout-minutes: 20
     permissions:
       contents: read
       id-token: write # OIDC — proves this repo belongs to the namespace owner

@@ -228,7 +228,8 @@ Add `"env": { "MSTODO_TOKEN_FILE": "/path/to/tokens.json" }` if the file is not 
 # Development & Building
 pnpm run build        # Build TypeScript to JavaScript
 pnpm run dev          # Build and run CLI in one command
-pnpm run validate     # Format, lint, typecheck, test and build
+pnpm run validate     # Format, lint, typecheck, test and build (fixes format and lint)
+pnpm run ci           # The same checks without fixing anything; what CI runs
 pnpm test             # Run the tests
 
 # Running the Server
@@ -454,7 +455,7 @@ Contributions are welcome! Please:
 
 1. Fork the repository
 2. Create a feature branch
-3. Run `pnpm run validate` (format, lint, typecheck, test, build) before submitting
+3. Run `pnpm run validate` (format, lint, typecheck, test, build) before submitting; CI runs `pnpm run ci`, the same checks without fixing
 4. Submit a pull request
 
 ## License

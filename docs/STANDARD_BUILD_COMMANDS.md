@@ -4,6 +4,8 @@
 
 This document defines a standardized set of npm/pnpm scripts that should be used across all repositories for consistency and developer experience.
 
+> **This repo:** the scripts in `package.json` delegate to the `ts-builds` CLI, and not every script below exists here. `pnpm run validate` runs format, lint, typecheck, test and build, fixing format and lint; `pnpm run ci` runs the same chain check-only, and is what CI and publishing run. `package.json` and `CLAUDE.md` are the source of truth.
+
 ## Core Commands
 
 ### 1. **`check`** - Quick validation (no build)
@@ -28,11 +30,12 @@ This document defines a standardized set of npm/pnpm scripts that should be used
 ### 3. **`ci`** - Complete CI validation
 
 ```json
-"ci": "pnpm run check && pnpm run build && pnpm run test"
+"ci": "ts-builds ci"
 ```
 
-- Full validation suite for CI/CD pipelines
-- Ensures code is ready for production
+- The `validate` chain, check-only: format:check, lint:check, typecheck, test, build
+- Never rewrites files, so CI checks exactly what was pushed or tagged
+- Always type `pnpm run ci`: a bare `pnpm ci` is pnpm's own clean install
 
 ### 4. **`precommit`** - Pre-commit hook
 
@@ -105,7 +108,7 @@ This document defines a standardized set of npm/pnpm scripts that should be used
     // Composite Commands
     "check": "pnpm run format:check && pnpm run lint && pnpm run typecheck",
     "check:fix": "pnpm run format && pnpm run lint:fix && pnpm run typecheck",
-    "ci": "pnpm run check && pnpm run build && pnpm run test",
+    "ci": "ts-builds ci",
     "precommit": "pnpm run check:fix && pnpm run build",
 
     // Production
