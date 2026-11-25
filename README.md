@@ -475,4 +475,4 @@ MIT License - See [LICENSE](LICENSE) file for details
 
 ---
 
-Maintained by [Jordan Burke](https://github.com/jordanburke) · **Affiliated with <a href="https://sapientsai.com/"><img src="https://sapientsai.com/images/logo.svg" alt="" width="20" style="vertical-align: middle;"> SapientsAI</a>**
+Maintained by [Jordan Burke](https://github.com/jordanburke) · **Affiliated with <a href="https://sapientsai.com/"><img src="https://sapientsai.com/images/logo.svg" alt="SapientsAI logo" width="18" align="absmiddle"></a> <a href="https://sapientsai.com/">SapientsAI</a>**
