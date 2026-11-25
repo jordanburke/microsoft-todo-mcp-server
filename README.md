@@ -472,3 +472,7 @@ MIT License - See [LICENSE](LICENSE) file for details
 
 - [GitHub Issues](https://github.com/jordanburke/microsoft-todo-mcp-server/issues)
 - [npm Package](https://www.npmjs.com/package/microsoft-todo-mcp-server)
+
+---
+
+Maintained by [Jordan Burke](https://github.com/jordanburke) · **Affiliated with <a href="https://sapientsai.com/"><img src="https://sapientsai.com/images/logo.svg" alt="" width="20" style="vertical-align: middle;"> SapientsAI</a>**
